@@ -1,29 +1,51 @@
 import express, { type Request, type Response, type NextFunction } from 'express';
-import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { loadConfig, type RamcpConfig } from '../core/config.js';
+import { loadLiveConfig, resolveToken, type RamcpConfig, type TokenRecord } from '../core/config.js';
+import { ConfigWatcher, type ToolContext } from '../core/context.js';
+import { AuditLog, redactArgs } from '../core/audit.js';
+import { RateLimiter } from '../core/rate-limit.js';
+import { tokensMatch } from '../core/crypto.js';
 import { registerAllTools } from '../tools/index.js';
-import type { PolicyConfig } from '../core/policy.js';
+import { startScheduler } from '../tools/schedule.js';
 
 const PKG_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
-const PKG_VERSION = JSON.parse(fs.readFileSync(path.join(PKG_ROOT, 'package.json'), 'utf8')).version;
+const PKG = JSON.parse(fs.readFileSync(path.join(PKG_ROOT, 'package.json'), 'utf8'));
 
-export function buildApp(): { app: express.Express; cfg: RamcpConfig } {
-  const cfg = loadConfig();
-  const policy: PolicyConfig = {
-    allowed_paths: cfg.allowed_paths,
-    denied_paths: cfg.denied_paths,
-    shell_enabled: cfg.shell_enabled,
+export interface GatewayState {
+  cfg: RamcpConfig;
+  watcher: ConfigWatcher;
+  audit: AuditLog | null;
+  limiter: RateLimiter;
+  reload(): void;
+}
+
+export function createGatewayState(): GatewayState {
+  const cfg = loadLiveConfig();
+  const watcher = new ConfigWatcher(path.join(require('node:os').homedir(), '.config', 'remote-access-mcp', 'config.json'));
+  const audit = cfg.audit.enabled ? new AuditLog(cfg.audit.db_path) : null;
+  const limiter = new RateLimiter(120, 2); // 120 burst, 2/sec refill per token
+
+  const state: GatewayState = {
+    cfg, watcher, audit, limiter,
+    reload() {
+      if (watcher.changed()) {
+        state.cfg = loadLiveConfig();
+        if (cfg.audit.enabled && !state.audit) state.audit = new AuditLog(state.cfg.audit.db_path);
+      }
+    },
   };
+  return state;
+}
+
+export function buildApp(state?: GatewayState): { app: express.Express; cfg: RamcpConfig; state: GatewayState } {
+  const gw = state || createGatewayState();
 
   const app = express();
-
-  // JSON bodies only. The MCP transport accepts a pre-parsed object —
-  // raw Buffers confuse it (it treats the Buffer itself as the message).
+  app.disable('x-powered-by');
   app.use(express.json({ limit: '64mb' }));
 
   // ---- helpers --------------------------------------------------------------
@@ -38,32 +60,106 @@ export function buildApp(): { app: express.Express; cfg: RamcpConfig } {
     return m ? m[1] : null;
   }
 
+  /** Resolve + validate a presented token to its record, or null. */
+  function authenticate(presented: string | null): TokenRecord | null {
+    if (!presented) return null;
+    gw.reload(); // hot-reload config if it changed on disk
+    // Fast reject on length before the constant-time compare loop
+    const candidates = gw.cfg.tokens.filter(t => t.token.length === presented.length);
+    for (const t of candidates) {
+      if (tokensMatch(t.token, presented)) {
+        if (t.expires && new Date(t.expires).getTime() < Date.now()) return null;
+        return t;
+      }
+    }
+    return null;
+  }
+
+  function rateLimited(t: TokenRecord): boolean {
+    const cap = t.max_requests_per_minute;
+    if (!cap) return false;
+    // per-minute budget: refill cap/60 per second, burst cap
+    const key = AuditLog.fingerprint(t.token);
+    return !gw.limiter.allowBurst(key, Math.floor(cap / 4));
+  }
+
   // ---- health ----------------------------------------------------------------
   app.get('/health', (_req, res) => {
-    res.json({ status: 'ok', service: 'remote-access-mcp', version: PKG_VERSION });
+    res.json({ status: 'ok', service: 'remote-access-mcp', version: PKG.version });
   });
 
   // ---- connector -----------------------------------------------------------------
   app.get('/connector', (req, res) => {
-    const token = tokenFromAuthHeader(req);
-    if (!token || token !== cfg.token) return unauthorized(res);
-    const host = cfg.public_host || `127.0.0.1:${cfg.port}`;
-    const scheme = cfg.public_host ? 'https' : 'http';
+    const presented = tokenFromAuthHeader(req);
+    const t = authenticate(presented);
+    if (!t) return unauthorized(res);
+    const host = gw.cfg.public_host || `127.0.0.1:${gw.cfg.port}`;
+    const scheme = gw.cfg.public_host ? 'https' : 'http';
     res.json({
       title: 'Chatbot Connection Link',
-      url: `${scheme}://${host}/${cfg.token}${cfg.mcp_path}`,
+      url: `${scheme}://${host}/${t.token}${gw.cfg.mcp_path}`,
     });
   });
 
   // ---- MCP handler (shared by both routes) ------------------------------------------
-  async function handleMcp(req: Request, res: Response): Promise<void> {
+  async function handleMcp(req: Request, res: Response, token: TokenRecord): Promise<void> {
+    if (rateLimited(token)) {
+      res.status(429).json({ error: 'Too Many Requests' });
+      return;
+    }
+    if (gw.cfg.read_only || token.read_only) {
+      // Read-only tokens still see everything listed; refusals happen per-tool.
+    }
+
     // Fresh server per request (stateless). Tools re-registered each time —
     // policy mutation via tools takes effect on the very next request.
     const server = new McpServer(
-      { name: 'remote-access-mcp', version: PKG_VERSION },
-      { capabilities: { tools: {} } },
+      { name: PKG.name, version: PKG.version },
+      { capabilities: { tools: { listChanged: true } } },
     );
-    registerAllTools(server, cfg, policy, () => { /* config already persisted by tools */ });
+
+    const ctx: ToolContext = {
+      cfg: gw.cfg,
+      token,
+      readOnly: Boolean(gw.cfg.read_only || token.read_only),
+      persist: () => { /* config object is shared; CLI/saveConfig handles the file */ },
+      audit: (tool, args, ok, isError, durationMs) => {
+        if (!gw.audit) return;
+        try {
+          gw.audit.record({
+            ts: Date.now(),
+            token_fingerprint: AuditLog.fingerprint(token.token),
+            tool,
+            args_json: redactArgs(args),
+            ok: ok ? 1 : 0,
+            is_error: isError ? 1 : 0,
+            duration_ms: Math.round(durationMs),
+          });
+        } catch { /* audit must never break the request */ }
+      },
+    };
+
+    // Wrap every tool handler so audit is recorded without touching each impl
+    const origRegister = server.registerTool.bind(server);
+    (server as any).registerTool = (name: string, config: any, handler: (args: any) => Promise<any>) => {
+      const wrapped = async (args: any) => {
+        const started = Date.now();
+        let result: any;
+        let isError = false;
+        try {
+          result = await handler(args);
+          isError = Boolean(result?.isError);
+        } catch (e: any) {
+          isError = true;
+          result = { content: [{ type: 'text', text: e?.message || 'tool error' }], isError: true };
+        }
+        ctx.audit(name, args || {}, !isError, isError, Date.now() - started);
+        return result;
+      };
+      return origRegister(name, config, wrapped);
+    };
+
+    registerAllTools(server, ctx);
 
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined, // stateless
@@ -80,17 +176,18 @@ export function buildApp(): { app: express.Express; cfg: RamcpConfig } {
   // ---- canonical route: /mcp (Authorization header) ------------------------------------
   app.all('/mcp', async (req, res, next) => {
     try {
-      const token = tokenFromAuthHeader(req);
-      if (!token || token !== cfg.token) return unauthorized(res);
-      await handleMcp(req, res);
+      const token = authenticate(tokenFromAuthHeader(req));
+      if (!token) return unauthorized(res);
+      await handleMcp(req, res, token);
     } catch (e) { next(e); }
   });
 
   // ---- token-in-path route: /<token>/mcp (ChatGPT-style) ----------------------------------
   app.all('/:token/mcp', async (req, res, next) => {
     try {
-      if (req.params.token !== cfg.token) return unauthorized(res);
-      await handleMcp(req, res);
+      const token = authenticate(req.params.token);
+      if (!token) return unauthorized(res);
+      await handleMcp(req, res, token);
     } catch (e) { next(e); }
   });
 
@@ -103,5 +200,10 @@ export function buildApp(): { app: express.Express; cfg: RamcpConfig } {
     if (!res.headersSent) res.status(500).json({ error: 'Internal Server Error' });
   });
 
-  return { app, cfg };
+  return { app, cfg: gw.cfg, state: gw };
+}
+
+// Back-compat: tests / old callers expect buildApp() with env-only config.
+export function buildStandaloneApp() {
+  return buildApp();
 }
