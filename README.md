@@ -22,7 +22,7 @@ The server binds to `127.0.0.1` only. You put it behind nginx/Caddy (with Cloudf
 ### One-liner (any Ubuntu/Debian server)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/amiralimanzar/remote-access-mcp/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/AmirAliManzar/remote-access-mcp/main/install.sh | bash
 ```
 
 Installs Node.js (if missing) via NodeSource, then the package globally. Then run:

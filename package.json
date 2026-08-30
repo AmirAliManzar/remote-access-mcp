@@ -36,16 +36,16 @@
     "claude",
     "devops"
   ],
-  "author": "Ali Manzar <amiralimanzar@gmail.com> (https://amiralimanzar.ir)",
+  "author": "Amir Ali Manzar (https://amiralimanzar.ir)",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/amiralimanzar/remote-access-mcp.git"
+    "url": "git+https://github.com/AmirAliManzar/remote-access-mcp.git"
   },
   "bugs": {
-    "url": "https://github.com/amiralimanzar/remote-access-mcp/issues"
+    "url": "https://github.com/AmirAliManzar/remote-access-mcp/issues"
   },
-  "homepage": "https://github.com/amiralimanzar/remote-access-mcp#readme",
+  "homepage": "https://github.com/AmirAliManzar/remote-access-mcp#readme",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.20.0",
     "express": "^4.21.0",

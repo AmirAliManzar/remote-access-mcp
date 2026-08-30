@@ -2,7 +2,7 @@
 #
 # remote-access-mcp — one-liner installer for Ubuntu/Debian servers.
 #
-#   curl -fsSL https://raw.githubusercontent.com/amiralimanzar/remote-access-mcp/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/AmirAliManzar/remote-access-mcp/main/install.sh | bash
 #
 # What it does:
 #   1. Checks for Node.js >= 18. Installs it via NodeSource if missing.
@@ -76,4 +76,4 @@ printf '  1. ramcp init               # generate config + token\n'
 printf '  2. ramcp start              # run in foreground\n'
 printf '  3. ramcp service install    # systemd + nginx vhost (production)\n'
 printf '  4. ramcp url                # connector URL for your chatbot\n'
-printf '\nDocs: https://github.com/amiralimanzar/remote-access-mcp\n'
+printf '\nDocs: https://github.com/AmirAliManzar/remote-access-mcp\n'
