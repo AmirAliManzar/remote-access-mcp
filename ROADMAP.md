@@ -2,42 +2,51 @@
 
 The vision: one command turns any server into an AI-controllable machine — securely, transparently, and without heavy dependencies.
 
-## v1.0 — Core gateway (current)
+## v1.x — Core gateway (done)
 
 - [x] MCP server over Streamable HTTP (stateless), Node.js + TypeScript
 - [x] Dual auth: `Authorization: Bearer` header or `/<token>/mcp` URL path
-- [x] Filesystem tools (7) with allow/deny path policy engine
-- [x] Shell tools (3) behind an opt-in flag
-- [x] System tools (3): info, disk usage, network interfaces
-- [x] HTTP tools (2): outbound request, port check
-- [x] Git tool (1): full porcelain wrapper
-- [x] SQLite tools (2)
-- [x] Policy tools (4): manage access from the chatbot itself
-- [x] CLI (`ramcp`): init, start, url, token rotate, policy, service, status
+- [x] Filesystem tools with allow/deny path policy engine (symlink-safe)
+- [x] Shell tools behind an opt-in flag
+- [x] System, HTTP, git, SQLite suites
+- [x] CLI (`ramcp`): init, start, url, token, policy, service, status
 - [x] systemd service + nginx vhost installer
-- [x] One-liner install script (`install.sh`)
+- [x] One-liner install script
 - [x] npm package: `remote-access-mcp`
 
-## v1.1 — Convenience
+## v2.0 — Multi-tenant & audit (done)
 
-- [ ] `ramcp doctor` — diagnose token, port, nginx, DNS in one pass
-- [ ] `ramcp logs` — journalctl wrapper with sensible defaults
-- [ ] Config file hot-reload (no restart needed for policy changes)
-- [ ] `--json` output mode on every CLI command (script-friendly)
+- [x] **Multi-token** with per-token: scopes (tool groups), allowed/denied paths, shell flag, read-only, rate limit, expiry
+- [x] **Tamper-evident audit log** — SQLite hash chain, `ramcp audit --verify`, secret redaction
+- [x] **`ramcp doctor`** — tokens, port, gateway health, nginx vhost, public URL, audit chain in one pass
+- [x] **Hot-reload** — policy changes apply on the next request, no restart
+- [x] **Global read-only mode** — kill-switch for all mutating tools
+- [x] **SSRF guards** — loopback/private/metadata ranges refused on all fetch tools
+- [x] **Injection guards** — git verb whitelist, SQL single-statement + ATTACH block, unit-name validation
+- [x] New suites: logs/journal, systemd control, packages, scheduler, security scans, project analysis, planning/snapshots, web_fetch
+- [x] 42 tests + CI on Node 18/20/22
 
-## v1.2 — Safety net
+## v2.1 — Next
 
-- [ ] Audit log: every tool invocation recorded (who/what/when/exit code) to a SQLite file
-- [ ] `ramcp audit` command to query it
-- [ ] Rate limiting per token
-- [ ] Read-only mode (`ramcp start --read-only`) — all mutating tools refuse
+- [ ] `ramcp upgrade` — self-update + service restart
+- [ ] Log rotation for `access.log`-style output
+- [ ] `--dry-run` for service install (show what would be written)
+- [ ] Prometheus `/metrics` endpoint (opt-in)
+- [ ] WebSocket transport alongside Streamable HTTP
 
-## v2.0 — Multi-server
+## v3.0 — Fleet
 
-- [ ] Multiple named tokens, each with its own policy + shell flag
-- [ ] `ramcp token add --paths /srv/foo --no-shell` style provisioning
-- [ ] Expiry dates on tokens (JWT-style claims, local verification)
-- [ ] A dashboard? Only if there's demand. CLI-first philosophy.
+- [ ] Multi-server mode: one gateway, SSH out to N machines, tools take a `--host` parameter
+- [ ] Fleet dashboard: `ramcp fleet status` across all machines
+- [ ] Token sharing across machines with per-host policies
+- [ ] MCP tool result caching for repeated expensive calls
+
+## Ideas parking lot
+
+- `ramcp config export/import` for backup/restore
+- Webhook notifications on audit anomalies (e.g. new token created, read-only violated)
+- Pinned-tool aliases: expose a git-command as a narrower custom tool
+- Integration recipes: pre-scoped tokens for "deploy my Node app", "restart nginx", common workflows
 
 ## Non-goals
 

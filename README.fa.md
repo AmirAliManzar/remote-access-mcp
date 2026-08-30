@@ -1,11 +1,12 @@
 # remote-access-mcp
 
 [![npm version](https://img.shields.io/npm/v/remote-access-mcp.svg)](https://www.npmjs.com/package/remote-access-mcp)
+[![CI](https://github.com/AmirAliManzar/remote-access-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/AmirAliManzar/remote-access-mcp/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 هر سرور لینوکسی رو با MCP ([Model Context Protocol](https://modelcontextprotocol.io)) به ماشینی تبدیل کن که هوش مصنوعی بهش وصل بشه.
 
-ChatGPT (حالت Developer)، Claude، Grok و هر کلاینت MCP-دیگه از طریق HTTPS وصل میشن و به‌صورت امن سرورت رو کنترل می‌کنن: خواندن و نوشتن فایل، اجرای دستورات شل، وضعیت سیستم، دیتابیس SQLite و کار با گیت — همه پشت یک توکن.
+ChatGPT (حالت Developer)، Claude، Grok و هر کلاینت MCP-دیگه از طریق HTTPS وصل میشن و به‌صورت امن سرورت رو کنترل می‌کنن — همه پشت دسترسی‌های per-token.
 
 **بدون پایتون. بدون داکر. فقط Node.js.**
 
@@ -14,96 +15,54 @@ npm install -g remote-access-mcp
 ramcp init
 ```
 
-## فلسفه
-
-دستیارهای هوش مصنوعی قوی‌ان ولی از زیرساخت شما دورن. این گیت‌وی اون رو برعکس می‌کنه: چت‌بات شما خودش مهندس DevOps میشه. «ببین چرا دیسک سرور پر میشه» یا «برنچ جدید رو دیپلوی کن و لاگ‌ها رو نگاه کن» تبدیل به گفتگوهای واقعی میشن.
-
-سرور فقط روی `127.0.0.1` گوش میده. پشت nginx/Caddy (با Cloudflare یا هر لبه TLS دیگه) قرارش میدی و دقیقاً یک endpoint HTTPS به دنیا ارائه میشه. هر درخواست باید توکن داشته باشه — یا به‌صورت هدر `Authorization: Bearer` یا داخل مسیر URL (`/<token>/mcp`) برای کلاینت‌هایی مثل کانکتور ChatGPT که نمی‌تونن هدر سفارشی ست کنن.
-
 ## نصب
-
-### یک خطی (هر سرور اوبونتو/دبیان)
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/AmirAliManzar/remote-access-mcp/main/install.sh | bash
-```
-
-سپس:
-
-```bash
 ramcp init
 ```
 
-### دستی
+## شروع سریع
 
 ```bash
-npm install -g remote-access-mcp
-ramcp init
+ramcp init                          # کانفیگ + اولین توکن
+ramcp policy allow /srv/myapp       # چه مسیرهایی رو AI ببینه
+ramcp policy shell on               # اجازه اجرای دستور (اختیاری)
+ramcp service install --domain mcp.example.com   # systemd + nginx
+ramcp doctor                        # بررسی سلامت همه‌چیز
+ramcp url                           # URL کانکتور برای چت‌بات
 ```
 
-## دستورات
-
-| دستور | توضیح |
-|---|---|
-| `ramcp init` | ساخت کانفیگ + توکن. اجرای مجدد امنه. |
-| `ramcp start` | اجرا در foreground. |
-| `ramcp url` | چاپ URL کانکتور برای چت‌بات. |
-| `ramcp token rotate` | تولید توکن جدید (قبلی فوراً باطل میشه). |
-| `ramcp policy` | نمایش مسیرهای مجاز. |
-| `ramcp policy allow <path>` | دادن دسترسی AI به یک دایرکتوری. |
-| `ramcp policy deny <path>` | سلب دسترسی از یک دایرکتوری. |
-| `ramcp policy shell on/off` | فعال/غیرفعال کردن اجرای شل. |
-| `ramcp service install` | نصب سرویس systemd + vhostnginx. |
-| `ramcp service uninstall` | حذف سرویس و کانفیگ nginx. |
-| `ramcp status` | وضعیت سرویس. |
-
-## اتصال چت‌بات
-
-### ChatGPT (Developer Mode → Connectors)
-
-از فرمت URL استفاده کن (ChatGPT نمی‌تونه هدر سفارشی ست کنه):
-
-```
-https://دامنه.com/<token>/mcp
-```
-
-آماده‌ش رو بگیر:
+## توکن‌های چندگانه — کمترین دسترسی به‌صورت پیش‌فرض
 
 ```bash
-$ ramcp url
-https://mcp.example.com/6kX9mQf2.../mcp
+# توکن فقط-خواندنی برای ممیزی
+ramcp token add --name auditor --paths /srv --scopes filesystem --read-only
+
+# توکن دیپلوی: فایل + گیت + شل، با محدودیت نرخ و انقضا
+ramcp token add --name deploy --paths /srv/app --scopes filesystem,git,shell --shell --rpm 30 --expires 2026-12-31
 ```
 
-### Claude و هر کلاینت MCP با پشتیبانی هدر
+هر توکن خودش داره: مسیرهای مجاز/غیرمجاز، گروه ابزارها (scopes)، فلگ شل، حالت فقط-خواندنی، محدودیت نرخ، و تاریخ انقضا.
 
-Endpoint: `https://دامنه.com/mcp`
-هدر: `Authorization: Bearer <token>`
+## ۳۸ ابزار در ۱۵ گروه
 
-## ابزارها
-
-**فایل‌سیستم** (۷) — `list_directory`, `read_file`, `write_file`, `edit_file`, `delete_path`, `search_code`, `file_info`
-
-**شل** (۳) — `run_command`, `process_list`, `kill_process`
-
-**سیستم** (۳) — `system_info`, `disk_usage`, `network_interfaces`
-
-**HTTP** (۲) — `http_request`, `port_check`
-
-**گیت** (۱) — `git`
-
-**SQLite** (۲) — `sqlite_query`, `sqlite_schema`
-
-**سیاست دسترسی** (۴) — `list_allowed_paths`, `allow_path`, `deny_path`, `shell_enabled`
+فایل‌سیستم (۷)، شل (۳)، سیستم (۳)، HTTP با محافظ SSRF (۳)، گیت با whitelist فعل‌ها (۱)، SQLite تک-دستوره (۲)، لاگ/journalctl (۳)، سرویس‌های systemd (۲)، پکیج‌ها apt/npm (۳)، زمان‌بند (۳)، اسکن امنیتی (۲)، تحلیل پروژه (۲)، پلنینگ + اسنپ‌شات/rollback (۴)، مدیریت پالیسی (۴).
 
 ## مدل امنیتی
 
-- **فقط loopback.** گیت‌وی روی `127.0.0.1:8765` گوش میده — از شبکه مستقیم قابل دسترسی نیست.
-- **احراز هویت توکنی روی هر درخواست.** دو فرمت: هدر bearer یا مسیر URL.
-- **موتور سیاست مسیر.** ابزارهای فایل‌سیستم symlinkها رو resolve و `..` رو قبل از چک allow/deny نرمال‌سازی می‌کنن. deny همیشه برنده‌ست.
-- **شل پشت فلگ.** تا صریحاً فعالش نکنی خاموشه.
-- **بدون لو رفتن رازها در لاگ‌ها.**
+- **فقط loopback** — سرور روی `127.0.0.1` گوش میده
+- **توکن timing-safe** روی هر درخواست — در لاگ‌ها فقط fingerprint ذخیره میشه
+- **Sandbox per-token** — resolve سیم‌لینک و `..` قبل از چک؛ deny همیشه برنده‌ست
+- **محدوده‌های SSRF بسته** — AI نمیتونه به metadata کلود یا سرویس‌های داخلی برسه
+- **ضد injection** — فعل‌های git whitelist، SQL تک-دستوره، ATTACH بسته
+- **لاگ audit ضد-دستکاری** — hash chain؛ `ramcp audit --verify` هر حذف/ویرایش رو لو میده؛ رازهای داخل آرگومان‌ها redact میشن
+- **Hot-reload** — تغییر پالیسی از درخواست بعدی اعمال میشه، بدون ریستارت
+- **کلید-کشِ حالت فقط-خواندن** — `ramcp policy readonly on` همه ابزارهای تغییردهنده رو قفل می‌کنه
 
-انتظار اینه که TLS جلوش باشه (nginx + Let's Encrypt یا لبه CDN). خود گیت‌وی HTTP ساده روی loopback حرف می‌زنه.
+## دستورات کامل
+
+`init` `start` `url` `doctor` `status` `token list|add|show|rotate|revoke` `policy [token] allow|deny|shell|readonly` `audit [--verify]` `service install|uninstall|logs|status` `schedule list` — جزئیات: [README انگلیسی](README.md)
 
 ## مجوز
 

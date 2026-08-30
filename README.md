@@ -1,11 +1,12 @@
 # remote-access-mcp
 
 [![npm version](https://img.shields.io/npm/v/remote-access-mcp.svg)](https://www.npmjs.com/package/remote-access-mcp)
+[![CI](https://github.com/AmirAliManzar/remote-access-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/AmirAliManzar/remote-access-mcp/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 Turn any Linux server into an AI-agent-accessible machine via the [Model Context Protocol](https://modelcontextprotocol.io) (MCP).
 
-ChatGPT (Developer Mode), Claude, Grok, and any MCP-compatible client connect over HTTPS and securely control your server: read/write files, run shell commands, inspect system state, query SQLite databases, work with git — all behind a single bearer token.
+ChatGPT (Developer Mode), Claude, Grok, and any MCP-compatible client connect over HTTPS and securely control your server: read/write files, run shell commands, manage services, query databases, audit everything — all behind per-token permissions.
 
 **Zero Python. Zero Docker. Just Node.js.**
 
@@ -16,9 +17,9 @@ ramcp init
 
 ## Why
 
-AI assistants are great, but they're sandboxed away from your infrastructure. This gateway flips that: your chatbot *becomes* the ops engineer. "Check why the disk is filling up on the server" or "deploy the new branch and tail the logs" become actual conversations.
+AI assistants are great, but they're sandboxed away from your infrastructure. This gateway flips that: your chatbot *becomes* the ops engineer. "Check why the disk is filling up, fix it, and show me the logs" becomes an actual conversation.
 
-The server binds to `127.0.0.1` only. You put it behind nginx/Caddy (with Cloudflare or any TLS edge in front) and expose exactly one HTTPS endpoint to the world. Every request must carry your token — either as `Authorization: Bearer <token>` header or embedded in the URL path (`/<token>/mcp`) for clients like ChatGPT's custom connectors that can't set custom headers.
+The server binds to `127.0.0.1` only. You put it behind nginx (with Cloudflare or any TLS edge in front) and expose exactly one HTTPS endpoint to the world. Every request carries a token — as an `Authorization: Bearer` header or embedded in the URL path (`/<token>/mcp`) for clients like ChatGPT's connectors that can't set custom headers.
 
 ## Install
 
@@ -26,11 +27,6 @@ The server binds to `127.0.0.1` only. You put it behind nginx/Caddy (with Cloudf
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/AmirAliManzar/remote-access-mcp/main/install.sh | bash
-```
-
-Installs Node.js (if missing) via NodeSource, then the package globally. Then run:
-
-```bash
 ramcp init
 ```
 
@@ -44,100 +40,131 @@ ramcp init
 ## Quick start
 
 ```bash
-$ ramcp init
-
-  ___                        _____
- | _ \__ _ __ _ ___ _ _   |_   _|__ _ _ _ __ _ ___
- |   / _` / _` / -_) '_|    | |/ - \ '_| '_/ _` / -_)
- |_|_\__,_\__, \___|_|      |_|\___/_| |_| \__,_\___|
-          |___/         remote-access-mcp v1.0.0
-
-✔ Config written to /root/.config/remote-access-mcp/config.json
-✔ Token generated: 6kX9mQ... (stored in config, never shown again in full)
-✔ Test the server:  ramcp start --dry-run
-
-Next steps:
-  1. ramcp start                      # run in foreground
-  2. ramcp service install            # systemd unit + nginx vhost (recommended)
-  3. ramcp url                        # show the connector URL for your chatbot
+ramcp init                          # config + first token
+ramcp policy allow /srv/myapp       # what the AI may touch
+ramcp policy shell on               # let it run commands (optional)
+ramcp service install --domain mcp.example.com   # systemd + nginx
+ramcp doctor                        # verify everything end-to-end
+ramcp url                           # connector URL for your chatbot
 ```
 
 ## Commands
 
 | Command | Description |
 |---|---|
-| `ramcp init` | Generate config + token. Safe to re-run. |
-| `ramcp start` | Run the gateway in the foreground. |
-| `ramcp url` | Print the MCP endpoint URL for chatbot connectors. |
-| `ramcp token rotate` | Generate a new token (old one stops working immediately). |
-| `ramcp policy` | Show which paths the AI may access. |
-| `ramcp policy allow <path>` | Allow the AI access to a directory. |
-| `ramcp policy deny <path>` | Revoke access to a directory. |
-| `ramcp policy shell on/off` | Enable/disable shell command execution. |
-| `ramcp service install` | Install systemd service + nginx reverse-proxy vhost. |
-| `ramcp service uninstall` | Remove service + nginx vhost. |
-| `ramcp status` | Check if the service is running. |
+| `ramcp init` | Generate config + first token. Safe to re-run. |
+| `ramcp start [--read-only]` | Run in the foreground. |
+| `ramcp url [token]` | Connector URL for a chatbot. |
+| `ramcp doctor` | One-pass diagnosis: tokens, port, gateway, nginx, public URL, audit chain. |
+| `ramcp status` | Service + config summary. |
+| `ramcp token list [--json]` | All tokens (fingerprints only). |
+| `ramcp token add --name N` | Create a scoped token — see options below. |
+| `ramcp token rotate [name]` | Rotate a token (old one dies instantly). |
+| `ramcp token revoke name` | Delete a token. |
+| `ramcp policy [token]` | Show/set path policy, shell flag. |
+| `ramcp policy readonly on` | Global kill-switch for ALL mutating tools. |
+| `ramcp audit [--tool T]` | Query the audit log. `--verify` checks the hash chain. |
+| `ramcp service install` | systemd unit (+ nginx vhost with `--domain`). |
+| `ramcp service logs -f` | Tail gateway logs. |
+| `ramcp schedule list` | List scheduled tasks. |
+
+### `token add` options
+
+```bash
+ramcp token add --name chatgpt \
+  --paths /srv/app \        # allowed directories (symlink-safe)
+  --deny /srv/app/.env \    # explicitly denied (deny always wins)
+  --shell \                 # allow shell commands (default: off)
+  --scopes filesystem,git \ # limit to tool groups (default: all)
+  --read-only \             # refuse every mutating tool
+  --rpm 30 \                # max requests per minute
+  --expires 2026-12-31      # auto-expiry
+```
+
+Example — a token that can only read files, never write or execute:
+
+```bash
+ramcp token add --name auditor --paths /srv --scopes filesystem --read-only
+```
 
 ## Connecting your chatbot
 
 ### ChatGPT (Developer Mode → Connectors)
 
-Use the URL form (ChatGPT can't set custom headers):
-
 ```
 https://your-domain.com/<token>/mcp
 ```
 
-Get it ready-made:
-
-```bash
-$ ramcp url
-https://mcp.example.com/6kX9mQf2.../mcp
-```
+Get it ready-made: `ramcp url`
 
 ### Claude / any MCP client with header support
 
-Endpoint: `https://your-domain.com/mcp`
-Header: `Authorization: Bearer <token>`
+Endpoint `https://your-domain.com/mcp` + header `Authorization: Bearer <token>`
 
-## Tools exposed
+## Tools (38 across 15 suites)
 
-**Filesystem** (7) — `list_directory`, `read_file`, `write_file`, `edit_file`, `delete_path`, `search_code`, `file_info`
+**Filesystem** (7) `list_directory` `read_file` (offset/limit) `write_file` `edit_file` `delete_path` `search_code` `file_info`
 
-**Shell** (3) — `run_command`, `process_list`, `kill_process`
+**Shell** (3) `run_command` (opt-in, timeout, output cap) `process_list` `kill_process` (refuses gateway/PID 1)
 
-**System** (3) — `system_info`, `disk_usage`, `network_interfaces`
+**System** (3) `system_info` `disk_usage` `network_interfaces`
 
-**HTTP** (2) — `http_request`, `port_check`
+**HTTP** (3) `http_request` `port_check` `web_fetch` — all SSRF-guarded: loopback, private ranges, and cloud metadata endpoints are refused
 
-**Git** (1) — `git` (status, diff, log, add, commit, push, pull…)
+**Git** (1) `git` — verb-whitelisted; option injection (`--upload-pack`) and shell metacharacters blocked
 
-**SQLite** (2) — `sqlite_query`, `sqlite_schema`
+**SQLite** (2) `sqlite_query` `sqlite_schema` — single-statement, ATTACH blocked
 
-**Policy** (4) — `list_allowed_paths`, `allow_path`, `deny_path`, `shell_enabled`
+**Logs** (3) `tail_logs` `search_logs` `journal` (unit name validated)
 
-Filesystem tools are sandboxed by an allow/deny policy (`ramcp policy`). By default nothing is allowed — you decide what the AI can touch. Shell is off by default too.
+**Services** (2) `service_status` `service_action` — protected units (ssh, gateway itself, targets) refused
+
+**Packages** (3) `package_list` `package_install` `package_remove` (refuses nodejs/nginx/ssh)
+
+**Scheduler** (3) `schedule_command` `list_scheduled_tasks` `cancel_scheduled_task` — min 60s intervals, shell-token-gated
+
+**Security** (2) `secret_scan` (10 credential patterns, masked output) `port_scan_local`
+
+**Project** (2) `analyze_project` `project_health_check`
+
+**Planning** (4) `create_task_plan` `task_status` `workspace_snapshot` `rollback_changes` — snapshot before risky edits, roll back atomically
+
+**Policy** (4) `list_allowed_paths` `allow_path` `deny_path` `shell_enabled` — each token manages only its own sandbox
 
 ## Security model
 
-- **Bind-local only.** The gateway listens on `127.0.0.1:8765` — unreachable from the network directly.
-- **Token auth on every request.** Two forms supported: bearer header or URL path.
-- **Path policy engine.** Filesystem tools resolve symlinks and normalize `..` traversal before checking allow/deny lists. Deny always wins.
-- **Shell behind a flag.** Off until you explicitly turn it on.
-- **No secrets in logs.** The token is never printed to stdout in full after generation.
+- **Loopback only.** The gateway listens on `127.0.0.1` — unreachable directly from the network.
+- **Timing-safe token auth** on every request; tokens never appear in logs (audits store fingerprints).
+- **Per-token sandbox.** Path policy resolves symlinks and collapses `..` before checking; deny always wins.
+- **Per-token scopes + read-only + rate limit + expiry.** Least privilege by construction.
+- **SSRF guards** on all outbound fetch tools — the AI can't reach your metadata endpoints or internal services.
+- **Injection guards.** git verbs whitelisted, SQL single-statement, ATTACH blocked, unit names validated.
+- **Tamper-evident audit.** Every tool invocation → SQLite with a hash chain; `ramcp audit --verify` detects deletions/edits. Secrets in arguments are redacted before storage.
+- **Hot-reload.** Policy edits apply on the next request — no restart, no downtime.
+- **Global read-only** kill-switch: `ramcp policy readonly on`.
 
-You are expected to put TLS in front (nginx + Let's Encrypt, or your CDN edge). The gateway itself speaks plain HTTP on loopback — same pattern as phpMyAdmin, Redis, and every other loopback service.
+You provide TLS (nginx + Cloudflare/Let's Encrypt). The gateway speaks plain HTTP on loopback, like every other loopback service.
 
 ## FAQ
 
 **Is exposing a shell to an AI safe?**
-It's exposing a shell to *you*, via the AI as the interface. The token gates everything; shell is opt-in; filesystem is policy-sandboxed. If you wouldn't give an intern SSH access, don't give them this token.
+It's exposing a shell to *you*, via the AI as the interface. Least-privilege tokens, scoped tools, off-by-default shell, tamper-evident audit, and a read-only mode give you dials that raw SSH doesn't.
 
-**Why stateless mode?**
-Each request creates a fresh MCP transport. No session state to corrupt, trivially horizontal-scalable, and it's what ChatGPT's connector flow works best with.
+**Stateless sessions?**
+Each request builds a fresh MCP transport. No session state to corrupt, trivially scalable, and it's the mode ChatGPT's connector flow works best with.
 
-**Does it run as root?**
-It can, and on a dedicated server that's often simplest — the tools need broad access to be useful. The policy engine is the guardrail, not the UID.
+**Where does config live?**
+`~/.config/remote-access-mcp/config.json` (0600) + `audit.db` + `schedule.json` alongside it.
+
+## Development
+
+```bash
+git clone https://github.com/AmirAliManzar/remote-access-mcp
+cd remote-access-mcp
+npm ci && npm run build && npm test
+```
+
+42 tests: policy engine, auth matrix, tools-over-MCP integration, full v2 security matrix (scopes, read-only, SSRF, injection, audit chain), CLI lifecycle. CI runs on Node 18/20/22.
 
 ## License
 

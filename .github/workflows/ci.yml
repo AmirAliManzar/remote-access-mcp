@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [18, 20, 22]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
+      - run: npm test
+      # Smoke test: build output must actually boot as a gateway
+      - name: smoke — gateway boots and authorizes
+        run: |
+          npm install -g . --allow-scripts=better-sqlite3
+          ramcp init
+          TOKEN=$(ramcp token show default --full)
+          RAMCP_TOKEN="$TOKEN" timeout 5 node dist/server/run.js &
+          sleep 2
+          curl -s --max-time 3 -X POST "http://127.0.0.1:8765/mcp" \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Content-Type: application/json" \
+            -H "Accept: application/json, text/event-stream" \
+            -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"ci","version":"1"}}}' \
+            | grep -q serverInfo
+          curl -s --max-time 3 http://127.0.0.1:8765/health | grep -q '"ok"'
+          echo "smoke test passed"
