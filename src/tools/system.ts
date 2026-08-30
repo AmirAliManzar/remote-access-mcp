@@ -1,13 +1,14 @@
 import os from 'node:os';
-import fsp from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { assertToolPermitted } from '../core/policy.js';
+import type { ToolContext } from '../core/context.js';
 
 const exec = promisify(execFile);
 
-export function registerSystemTools(server: McpServer): void {
+export function registerSystemTools(server: McpServer, ctx: ToolContext): void {
   // ---- system_info ---------------------------------------------------------
   server.registerTool('system_info',
     {
@@ -15,6 +16,7 @@ export function registerSystemTools(server: McpServer): void {
       inputSchema: {},
     },
     async () => {
+      assertToolPermitted({ tool: 'system_info', scopes: ctx.token.scopes, readOnly: ctx.readOnly });
       const cpus = os.cpus();
       const out = [
         `hostname: ${os.hostname()}`,
@@ -32,10 +34,11 @@ export function registerSystemTools(server: McpServer): void {
   // ---- disk_usage ------------------------------------------------------------
   server.registerTool('disk_usage',
     {
-      description: 'Filesystem sizes and usage. Human-readable df output plus inodes.',
+      description: 'Filesystem sizes and usage. Human-readable df output.',
       inputSchema: { path: z.string().optional().describe('Restrict to a mount point') },
     },
     async ({ path }) => {
+      assertToolPermitted({ tool: 'disk_usage', scopes: ctx.token.scopes, readOnly: ctx.readOnly });
       const args = ['-h'];
       if (path) args.push(path);
       try {
@@ -53,6 +56,7 @@ export function registerSystemTools(server: McpServer): void {
       inputSchema: {},
     },
     async () => {
+      assertToolPermitted({ tool: 'network_interfaces', scopes: ctx.token.scopes, readOnly: ctx.readOnly });
       const ifaces = os.networkInterfaces();
       const lines: string[] = [];
       for (const [name, addrs] of Object.entries(ifaces)) {

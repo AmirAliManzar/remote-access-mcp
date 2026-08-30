@@ -3,9 +3,19 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { PolicyConfig, assertAllowed, PolicyError } from '../core/policy.js';
+import { assertToolPermitted, assertAllowed, PolicyError } from '../core/policy.js';
+import type { ToolContext } from '../core/context.js';
 
-export function registerFilesystemTools(server: McpServer, policy: PolicyConfig): void {
+export function registerFilesystemTools(server: McpServer, ctx: ToolContext): void {
+  const perm = (tool: string, target?: string) =>
+    assertToolPermitted({ tool, scopes: ctx.token.scopes, readOnly: ctx.readOnly, policy: policy(), target });
+
+  const policy = () => ({
+    allowed_paths: ctx.token.allowed_paths,
+    denied_paths: ctx.token.denied_paths,
+    shell_enabled: ctx.token.shell_enabled,
+  });
+
   // ---- list_directory ---------------------------------------------------
   server.registerTool('list_directory',
     {
@@ -13,7 +23,7 @@ export function registerFilesystemTools(server: McpServer, policy: PolicyConfig)
       inputSchema: { path: z.string().describe('Directory path') },
     },
     async ({ path: dir }) => {
-      assertAllowed(policy, dir);
+      perm('list_directory', dir);
       const entries = await fsp.readdir(dir, { withFileTypes: true });
       const lines = entries.map(e => {
         const suffix = e.isDirectory() ? '/' : e.isSymbolicLink() ? '@' : '';
@@ -26,11 +36,20 @@ export function registerFilesystemTools(server: McpServer, policy: PolicyConfig)
   server.registerTool('read_file',
     {
       description: 'Read a UTF-8 text file. Policy-checked.',
-      inputSchema: { path: z.string().describe('File path') },
+      inputSchema: {
+        path: z.string().describe('File path'),
+        offset: z.number().optional().describe('Start line (1-based)'),
+        limit: z.number().optional().describe('Max lines to return'),
+      },
     },
-    async ({ path: file }) => {
-      assertAllowed(policy, file);
-      const data = await fsp.readFile(file, 'utf8');
+    async ({ path: file, offset, limit }) => {
+      perm('read_file', file);
+      let data = await fsp.readFile(file, 'utf8');
+      if (offset || limit) {
+        const lines = data.split('\n');
+        const start = Math.max((offset || 1) - 1, 0);
+        data = lines.slice(start, start + (limit || lines.length)).join('\n');
+      }
       return { content: [{ type: 'text', text: data }] };
     });
 
@@ -41,11 +60,12 @@ export function registerFilesystemTools(server: McpServer, policy: PolicyConfig)
       inputSchema: {
         path: z.string().describe('File path'),
         content: z.string().describe('Full file content'),
+        mkdir: z.boolean().optional().default(true).describe('Create parent directories'),
       },
     },
-    async ({ path: file, content }) => {
-      assertAllowed(policy, file);
-      await fsp.mkdir(path.dirname(file), { recursive: true });
+    async ({ path: file, content, mkdir }) => {
+      perm('write_file', file);
+      if (mkdir) await fsp.mkdir(path.dirname(file), { recursive: true });
       await fsp.writeFile(file, content, 'utf8');
       return { content: [{ type: 'text', text: `Wrote ${Buffer.byteLength(content)} bytes to ${file}` }] };
     });
@@ -62,7 +82,7 @@ export function registerFilesystemTools(server: McpServer, policy: PolicyConfig)
       },
     },
     async ({ path: file, old_text, new_text, all }) => {
-      assertAllowed(policy, file);
+      perm('edit_file', file);
       const data = await fsp.readFile(file, 'utf8');
       if (!data.includes(old_text)) {
         return { content: [{ type: 'text', text: `old_text not found in ${file}` }], isError: true };
@@ -79,7 +99,7 @@ export function registerFilesystemTools(server: McpServer, policy: PolicyConfig)
       inputSchema: { path: z.string().describe('Path to delete') },
     },
     async ({ path: target }) => {
-      assertAllowed(policy, target);
+      perm('delete_path', target);
       const st = fs.lstatSync(target);
       if (st.isDirectory()) {
         await fsp.rm(target, { recursive: true });
@@ -96,12 +116,12 @@ export function registerFilesystemTools(server: McpServer, policy: PolicyConfig)
       inputSchema: {
         path: z.string().describe('Directory to search'),
         pattern: z.string().describe('JavaScript regex, e.g. "TODO|FIXME"'),
-        include: z.string().optional().describe('Glob filter for file names, e.g. "*.ts"'),
+        include: z.string().optional().describe('Substring filter for file names, e.g. ".ts"'),
         max_results: z.number().optional().default(100).describe('Cap on matches'),
       },
     },
     async ({ path: dir, pattern, include, max_results }) => {
-      assertAllowed(policy, dir);
+      perm('search_code', dir);
       const re = new RegExp(pattern);
       const results: string[] = [];
       const walk = async (d: string): Promise<void> => {
@@ -115,10 +135,7 @@ export function registerFilesystemTools(server: McpServer, policy: PolicyConfig)
           const full = path.join(d, e.name);
           if (e.isDirectory()) { await walk(full); continue; }
           if (!e.isFile()) continue;
-          if (include) {
-            try { if (!new RegExp(include.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')).test(e.name)) continue; }
-            catch { /* bad glob → no filter */ }
-          }
+          if (include && !e.name.includes(include)) continue;
           let content: string;
           try { content = await fsp.readFile(full, 'utf8'); }
           catch { continue; }
@@ -139,7 +156,7 @@ export function registerFilesystemTools(server: McpServer, policy: PolicyConfig)
       inputSchema: { path: z.string().describe('Path') },
     },
     async ({ path: target }) => {
-      assertAllowed(policy, target);
+      perm('file_info', target);
       const st = await fsp.stat(target);
       const out = [
         `path: ${target}`,
@@ -153,5 +170,4 @@ export function registerFilesystemTools(server: McpServer, policy: PolicyConfig)
     });
 }
 
-// Re-export so tool modules share the same error surface.
 export { PolicyError };
