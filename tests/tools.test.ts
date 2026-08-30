@@ -9,6 +9,7 @@ let baseUrl: string;
 
 beforeAll(async () => {
   process.env.RAMCP_TOKEN = TEST_TOKEN;
+  process.env.RAMCP_SHELL = '0';   // hermetic: never inherit the host's real config
   const { app } = buildApp();
   server = http.createServer(app);
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
@@ -18,6 +19,7 @@ beforeAll(async () => {
 afterAll(async () => {
   await new Promise<void>((r) => server.close(() => r()));
   delete process.env.RAMCP_TOKEN;
+  delete process.env.RAMCP_SHELL;
 });
 
 let rpcId = 0;

@@ -43,6 +43,9 @@ export function loadConfig(): RamcpConfig {
   const envHost = env.RAMCP_HOST || env.DANA_HOST;
   const envPort = env.RAMCP_PORT || env.DANA_PORT;
   const envPublic = env.RAMCP_PUBLIC_HOST || env.DANA_PUBLIC_HOST;
+  const envShell = env.RAMCP_SHELL;
+  const envAllow = env.RAMCP_ALLOWED_PATHS; // colon-separated
+  const envDeny = env.RAMCP_DENIED_PATHS;   // colon-separated
 
   const resolved: RamcpConfig = {
     token: envToken || cfg.token || '',
@@ -50,9 +53,9 @@ export function loadConfig(): RamcpConfig {
     port: envPort ? parseInt(envPort, 10) : (cfg.port || 8765),
     public_host: envPublic || cfg.public_host || '',
     mcp_path: cfg.mcp_path || '/mcp',
-    shell_enabled: cfg.shell_enabled ?? false,
-    allowed_paths: cfg.allowed_paths || [],
-    denied_paths: cfg.denied_paths || [],
+    shell_enabled: envShell !== undefined ? envShell === '1' || envShell === 'true' : (cfg.shell_enabled ?? false),
+    allowed_paths: envAllow ? envAllow.split(':').filter(Boolean) : (cfg.allowed_paths || []),
+    denied_paths: envDeny ? envDeny.split(':').filter(Boolean) : (cfg.denied_paths || []),
   };
   return resolved;
 }
