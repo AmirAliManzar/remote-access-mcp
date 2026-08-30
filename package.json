@@ -10,6 +10,7 @@
   "files": [
     "dist",
     "README.md",
+    "README.fa.md",
     "LICENSE",
     "install.sh"
   ],

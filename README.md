@@ -1,5 +1,8 @@
 # remote-access-mcp
 
+[![npm version](https://img.shields.io/npm/v/remote-access-mcp.svg)](https://www.npmjs.com/package/remote-access-mcp)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 Turn any Linux server into an AI-agent-accessible machine via the [Model Context Protocol](https://modelcontextprotocol.io) (MCP).
 
 ChatGPT (Developer Mode), Claude, Grok, and any MCP-compatible client connect over HTTPS and securely control your server: read/write files, run shell commands, inspect system state, query SQLite databases, work with git — all behind a single bearer token.
@@ -139,3 +142,7 @@ It can, and on a dedicated server that's often simplest — the tools need broad
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+---
+
+📚 [README فارسی](README.fa.md) | [Roadmap](ROADMAP.md)
