@@ -5,13 +5,50 @@ export interface PolicyConfig {
   allowed_paths: string[];
   denied_paths: string[];
   shell_enabled: boolean;
+  read_only?: boolean;
 }
+
+/** Tool groups — used for per-token scopes. */
+export const TOOL_SCOPES: Record<string, string[]> = {
+  filesystem: ['list_directory', 'read_file', 'write_file', 'edit_file', 'delete_path', 'search_code', 'file_info'],
+  shell: ['run_command', 'process_list', 'kill_process'],
+  system: ['system_info', 'disk_usage', 'network_interfaces'],
+  http: ['http_request', 'port_check', 'web_fetch'],
+  git: ['git'],
+  sqlite: ['sqlite_query', 'sqlite_schema'],
+  policy: ['list_allowed_paths', 'allow_path', 'deny_path', 'shell_enabled'],
+  logs: ['tail_logs', 'search_logs', 'journal'],
+  services: ['service_status', 'service_action'],
+  packages: ['package_list', 'package_install', 'package_remove'],
+  schedule: ['schedule_command', 'cancel_scheduled_task', 'list_scheduled_tasks'],
+  project: ['analyze_project', 'project_health_check'],
+  security: ['secret_scan', 'port_scan_local'],
+  planning: ['create_task_plan', 'task_status', 'workspace_snapshot', 'rollback_changes'],
+  formatting: ['format_python', 'lint_python'],
+  documents: ['create_document'],
+};
+
+/** Tools that mutate state — refused under read_only. */
+export const MUTATING_TOOLS = new Set([
+  'write_file', 'edit_file', 'delete_path', 'run_command', 'kill_process',
+  'git', 'sqlite_query', 'allow_path', 'deny_path',
+  'package_install', 'package_remove', 'service_action',
+  'schedule_command', 'cancel_scheduled_task', 'workspace_snapshot', 'rollback_changes',
+]);
 
 /** Thrown by tools when a target path is outside the policy sandbox. */
 export class PolicyError extends Error {
   constructor(public readonly target: string) {
     super(`Access to ${target} is not allowed by the path policy`);
     this.name = 'PolicyError';
+  }
+}
+
+/** Thrown when a scope excludes the tool, or read-only blocks it. */
+export class ScopeError extends Error {
+  constructor(tool: string, why: string) {
+    super(`Tool ${tool} is not permitted: ${why}`);
+    this.name = 'ScopeError';
   }
 }
 
@@ -65,4 +102,31 @@ export function assertAllowed(policy: PolicyConfig, p: string): void {
 
 export function shellAllowed(policy: PolicyConfig): boolean {
   return policy.shell_enabled;
+}
+
+/** Map a tool name to its scope group (null = uncategorized). */
+export function scopeOf(tool: string): string | null {
+  for (const [group, tools] of Object.entries(TOOL_SCOPES)) {
+    if (tools.includes(tool)) return group;
+  }
+  return null;
+}
+
+/** Full gate: scope + read-only + (for path tools) sandbox. */
+export function assertToolPermitted(
+  opts: { tool: string; scopes: string[]; readOnly: boolean; policy?: PolicyConfig; target?: string },
+): void {
+  const { tool, scopes, readOnly, policy, target } = opts;
+  if (scopes.length > 0 && !scopes.includes(tool)) {
+    const group = scopeOf(tool);
+    if (!group || !scopes.includes(group)) {
+      throw new ScopeError(tool, `outside token scopes (${scopes.join(', ')})`);
+    }
+  }
+  if (readOnly && MUTATING_TOOLS.has(tool)) {
+    throw new ScopeError(tool, 'read-only mode is active');
+  }
+  if (target !== undefined && policy) {
+    assertAllowed(policy, target);
+  }
 }
