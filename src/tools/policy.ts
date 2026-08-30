@@ -1,11 +1,10 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { RamcpConfig } from '../core/config.js';
+import { saveConfig, type RamcpConfig } from '../core/config.js';
 import { resolveReal, PolicyConfig } from '../core/policy.js';
 
 export function registerPolicyTools(server: McpServer, cfg: RamcpConfig, reload: () => void): void {
   const persist = () => {
-    const { saveConfig } = require('../core/config.js') as typeof import('../core/config.js');
     saveConfig(cfg);
     reload();
   };

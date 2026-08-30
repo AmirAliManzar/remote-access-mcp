@@ -2,10 +2,12 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import {
   loadConfig, saveConfig, generateToken, configPath, configDir,
   type RamcpConfig,
 } from '../core/config.js';
+import { resolveReal } from '../core/policy.js';
 
 const PKG = { name: 'remote-access-mcp', version: '1.0.0' };
 
@@ -166,7 +168,6 @@ function cmdToken(args: Args): void {
 function cmdPolicy(args: Args): void {
   const cfg = loadConfig();
   const sub = args.sub[0] || '';
-  const { resolveReal } = require('../core/policy.js') as typeof import('../core/policy.js');
 
   if (sub === 'allow' && args.sub[1]) {
     const real = resolveReal(args.sub[1]);
@@ -214,7 +215,6 @@ function serviceRunning(): boolean {
 
 function reloadService(): void {
   if (isSystemdInstalled()) {
-    const { execFileSync } = require('node:child_process') as typeof import('node:child_process');
     try {
       execFileSync('systemctl', ['restart', SERVICE_NAME], { stdio: 'ignore' });
       console.log('Service restarted to apply changes.');
@@ -231,7 +231,6 @@ function cmdService(args: Args): void {
   } else if (sub === 'uninstall') {
     uninstallService();
   } else if (sub === 'logs') {
-    const { execFileSync } = require('node:child_process') as typeof import('node:child_process');
     const flags = args.flags.has('f') || args.flags.has('follow') ? ['-f'] : [];
     try {
       execFileSync('journalctl', ['-u', SERVICE_NAME, '-n', '100', ...flags], { stdio: 'inherit' });
@@ -269,7 +268,6 @@ Environment=NODE_ENV=production
 WantedBy=multi-user.target
 `;
   fs.writeFileSync(SERVICE_FILE, unit);
-  const { execFileSync } = require('node:child_process') as typeof import('node:child_process');
   execFileSync('systemctl', ['daemon-reload']);
   execFileSync('systemctl', ['enable', '--now', SERVICE_NAME]);
   console.log(`✔ systemd service installed and started: ${SERVICE_NAME}`);
@@ -322,7 +320,6 @@ function uninstallService(): void {
     console.error('service uninstall requires root (sudo).');
     process.exit(1);
   }
-  const { execFileSync } = require('node:child_process') as typeof import('node:child_process');
   const { existsSync, readFileSync } = fs;
   if (existsSync(SERVICE_FILE)) {
     try { execFileSync('systemctl', ['disable', '--now', SERVICE_NAME]); } catch { /* not running */ }
@@ -355,7 +352,6 @@ function uninstallService(): void {
 // status
 // ---------------------------------------------------------------------------
 function cmdStatus(): void {
-  const { execFileSync } = require('node:child_process') as typeof import('node:child_process');
   const installed = isSystemdInstalled();
   console.log(`service installed: ${installed ? 'yes' : 'no'}`);
   if (installed) {
