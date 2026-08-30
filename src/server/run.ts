@@ -26,3 +26,11 @@ export async function runServer(): Promise<void> {
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);
 }
+
+// Direct execution: `node dist/server/run.js`
+if (import.meta.url === `file://${process.argv[1]}`) {
+  runServer().catch((e) => {
+    console.error(e);
+    process.exit(1);
+  });
+}
