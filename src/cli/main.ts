@@ -10,7 +10,9 @@ import {
 } from '../core/config.js';
 import { resolveReal } from '../core/policy.js';
 
-const PKG = { name: 'remote-access-mcp', version: '1.0.0' };
+// Read version from the installed package.json (single source of truth)
+const PKG_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+const PKG = JSON.parse(fs.readFileSync(path.join(PKG_ROOT, 'package.json'), 'utf8'));
 
 // ---------------------------------------------------------------------------
 // help text

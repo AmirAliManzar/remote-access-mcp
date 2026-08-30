@@ -1,10 +1,16 @@
 import express, { type Request, type Response, type NextFunction } from 'express';
 import { randomUUID } from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { loadConfig, type RamcpConfig } from '../core/config.js';
 import { registerAllTools } from '../tools/index.js';
 import type { PolicyConfig } from '../core/policy.js';
+
+const PKG_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+const PKG_VERSION = JSON.parse(fs.readFileSync(path.join(PKG_ROOT, 'package.json'), 'utf8')).version;
 
 export function buildApp(): { app: express.Express; cfg: RamcpConfig } {
   const cfg = loadConfig();
@@ -34,7 +40,7 @@ export function buildApp(): { app: express.Express; cfg: RamcpConfig } {
 
   // ---- health ----------------------------------------------------------------
   app.get('/health', (_req, res) => {
-    res.json({ status: 'ok', service: 'remote-access-mcp', version: '1.0.0' });
+    res.json({ status: 'ok', service: 'remote-access-mcp', version: PKG_VERSION });
   });
 
   // ---- connector -----------------------------------------------------------------
@@ -54,7 +60,7 @@ export function buildApp(): { app: express.Express; cfg: RamcpConfig } {
     // Fresh server per request (stateless). Tools re-registered each time —
     // policy mutation via tools takes effect on the very next request.
     const server = new McpServer(
-      { name: 'remote-access-mcp', version: '1.0.0' },
+      { name: 'remote-access-mcp', version: PKG_VERSION },
       { capabilities: { tools: {} } },
     );
     registerAllTools(server, cfg, policy, () => { /* config already persisted by tools */ });
