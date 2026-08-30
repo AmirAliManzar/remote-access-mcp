@@ -1,0 +1,63 @@
+{
+  "name": "remote-access-mcp",
+  "version": "1.0.0",
+  "description": "Turn any Linux server into an AI-agent-accessible machine via MCP. ChatGPT, Claude, and Grok connect over HTTPS and control files, shell, git, and more — securely and with zero Python dependencies.",
+  "type": "module",
+  "bin": {
+    "remote-access-mcp": "dist/cli.js",
+    "ramcp": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "install.sh"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/main.ts",
+    "start": "node dist/main.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "tsc --noEmit",
+    "prepublishOnly": "npm run build && npm test"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "ai",
+    "agent",
+    "remote-access",
+    "server-management",
+    "chatgpt",
+    "claude",
+    "devops"
+  ],
+  "author": "Ali Manzar <amiralimanzar@gmail.com> (https://amiralimanzar.ir)",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/amiralimanzar/remote-access-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/amiralimanzar/remote-access-mcp/issues"
+  },
+  "homepage": "https://github.com/amiralimanzar/remote-access-mcp#readme",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.20.0",
+    "express": "^4.21.0",
+    "better-sqlite3": "^11.6.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0"
+  }
+}
