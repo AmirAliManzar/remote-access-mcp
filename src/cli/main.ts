@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import {
   loadConfig, saveConfig, generateToken, configPath, configDir,
   type RamcpConfig,
@@ -251,7 +252,7 @@ function installService(args: Args): void {
   const domain = args.values.get('domain') || '';
   const cfg = loadConfig();
   const nodeBin = process.execPath;
-  const pkgRoot = path.resolve(path.dirname(require.main?.filename || __filename), '..');
+  const pkgRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 
   const unit = `[Unit]
 Description=Remote Access MCP Gateway
