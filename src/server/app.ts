@@ -5,13 +5,15 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { loadLiveConfig, resolveToken, type RamcpConfig, type TokenRecord } from '../core/config.js';
+import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
+import { loadLiveConfig, resolveToken, configPath, type RamcpConfig, type TokenRecord } from '../core/config.js';
 import { ConfigWatcher, type ToolContext } from '../core/context.js';
 import { AuditLog, redactArgs } from '../core/audit.js';
 import { RateLimiter } from '../core/rate-limit.js';
 import { tokensMatch } from '../core/crypto.js';
 import { registerAllTools } from '../tools/index.js';
 import { startScheduler } from '../tools/schedule.js';
+import { SessionStore } from './sessions.js';
 
 const PKG_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const PKG = JSON.parse(fs.readFileSync(path.join(PKG_ROOT, 'package.json'), 'utf8'));
@@ -21,17 +23,19 @@ export interface GatewayState {
   watcher: ConfigWatcher;
   audit: AuditLog | null;
   limiter: RateLimiter;
+  sessions: SessionStore;
   reload(): void;
 }
 
 export function createGatewayState(): GatewayState {
   const cfg = loadLiveConfig();
-  const watcher = new ConfigWatcher(path.join(os.homedir(), '.config', 'remote-access-mcp', 'config.json'));
+  const watcher = new ConfigWatcher(configPath());
   const audit = cfg.audit.enabled ? new AuditLog(cfg.audit.db_path) : null;
   const limiter = new RateLimiter(120, 2); // 120 burst, 2/sec refill per token
 
   const state: GatewayState = {
     cfg, watcher, audit, limiter,
+    sessions: new SessionStore(),
     reload() {
       if (watcher.changed()) {
         state.cfg = loadLiveConfig();
@@ -133,18 +137,12 @@ export function buildApp(state?: GatewayState): { app: express.Express; cfg: Ram
     });
   });
 
-  // ---- MCP handler (shared by both routes) ------------------------------------------
-  async function handleMcp(req: Request, res: Response, token: TokenRecord): Promise<void> {
-    if (rateLimited(token)) {
-      res.status(429).json({ error: 'Too Many Requests' });
-      return;
-    }
-    if (gw.cfg.read_only || token.read_only) {
-      // Read-only tokens still see everything listed; refusals happen per-tool.
-    }
-
-    // Fresh server per request (stateless). Tools re-registered each time —
-    // policy mutation via tools takes effect on the very next request.
+  // ---- MCP handler ------------------------------------------------------------------
+  /**
+   * Build a fully-wired McpServer for one token. Tools are registered fresh so
+   * policy edits (CLI or in-chat) take effect on the next server build.
+   */
+  function buildServerFor(token: TokenRecord): McpServer {
     const server = new McpServer(
       { name: PKG.name, version: PKG.version },
       { capabilities: { tools: { listChanged: true } } },
@@ -154,7 +152,7 @@ export function buildApp(state?: GatewayState): { app: express.Express; cfg: Ram
       cfg: gw.cfg,
       token,
       readOnly: Boolean(gw.cfg.read_only || token.read_only),
-      persist: () => { /* config object is shared; CLI/saveConfig handles the file */ },
+      persist: () => { /* config object is shared; saveConfig handles the file */ },
       audit: (tool, args, ok, isError, durationMs) => {
         if (!gw.audit) return;
         try {
@@ -192,9 +190,74 @@ export function buildApp(state?: GatewayState): { app: express.Express; cfg: Ram
     };
 
     registerAllTools(server, ctx);
+    return server;
+  }
 
+  /**
+   * Serves both client dialects:
+   *
+   *  - Stateless (ChatGPT, Grok): every POST is self-contained and the
+   *    Mcp-Session-Id header is ignored. A throwaway transport per request.
+   *  - Stateful (Claude): `initialize` must return an Mcp-Session-Id, and
+   *    follow-up requests carry it. Claude aborts the connector with
+   *    "Couldn't reach <server>" when the header is missing, so initialize
+   *    always opens a real session and we route by id afterwards.
+   */
+  async function handleMcp(req: Request, res: Response, token: TokenRecord): Promise<void> {
+    if (rateLimited(token)) {
+      res.status(429).json({ error: 'Too Many Requests' });
+      return;
+    }
+    gw.sessions.sweep();
+
+    const sessionId = req.headers['mcp-session-id'];
+    const sid = Array.isArray(sessionId) ? sessionId[0] : sessionId;
+    const tokenId = AuditLog.fingerprint(token.token);
+
+    // --- existing session: route to its transport ---
+    if (sid) {
+      const session = gw.sessions.get(sid);
+      if (session) {
+        if (session.tokenId !== tokenId) {
+          // Sessions are bound to the token that opened them.
+          res.status(403).json({ jsonrpc: '2.0', error: { code: -32003, message: 'Session belongs to a different token' }, id: null });
+          return;
+        }
+        if (req.method === 'DELETE') {
+          gw.sessions.delete(sid);
+          res.status(204).end();
+          return;
+        }
+        await session.transport.handleRequest(req, res, req.body);
+        return;
+      }
+      // Unknown/expired id — tell the client to start over instead of hanging.
+      res.status(404).json({ jsonrpc: '2.0', error: { code: -32001, message: 'Session not found' }, id: null });
+      return;
+    }
+
+    // --- initialize without a session: open a stateful one ---
+    if (req.method === 'POST' && isInitializeRequest(req.body)) {
+      const server = buildServerFor(token);
+      const transport = new StreamableHTTPServerTransport({
+        sessionIdGenerator: () => gw.sessions.newId(),
+        enableJsonResponse: true,
+        onsessioninitialized: (id: string) => {
+          gw.sessions.set({ id, server, transport, tokenId, created: Date.now(), lastSeen: Date.now() });
+        },
+      });
+      transport.onclose = () => {
+        if (transport.sessionId) gw.sessions.delete(transport.sessionId);
+      };
+      await server.connect(transport);
+      await transport.handleRequest(req, res, req.body);
+      return;
+    }
+
+    // --- stateless fallback: self-contained request, throwaway transport ---
+    const server = buildServerFor(token);
     const transport = new StreamableHTTPServerTransport({
-      sessionIdGenerator: undefined, // stateless
+      sessionIdGenerator: undefined,
       enableJsonResponse: true,
     });
     res.on('close', () => {

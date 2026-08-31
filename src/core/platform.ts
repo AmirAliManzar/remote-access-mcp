@@ -76,6 +76,47 @@ export function legacyDataDir(): string {
   return path.join(os.homedir(), '.config', 'remote-access-mcp');
 }
 
+/**
+ * Ephemeral runtime state (live tunnel URL, pid) — deliberately NOT config.
+ * A tunnel URL is valid only while the process runs, so persisting it into
+ * config.json would clobber a server's real public_host.
+ */
+export function runtimeStatePath(): string {
+  return path.join(dataDir(), 'runtime.json');
+}
+
+export interface RuntimeState {
+  pid: number;
+  tunnel_url?: string;
+  host: string;
+  port: number;
+  started: string;
+}
+
+export function writeRuntimeState(state: RuntimeState): void {
+  fs.mkdirSync(dataDir(), { recursive: true });
+  fs.writeFileSync(runtimeStatePath(), JSON.stringify(state, null, 2), { mode: 0o600 });
+}
+
+export function clearRuntimeState(): void {
+  try { fs.unlinkSync(runtimeStatePath()); } catch { /* already gone */ }
+}
+
+/** Read runtime state, but only if the owning process is still alive. */
+export function readRuntimeState(): RuntimeState | null {
+  try {
+    const s = JSON.parse(fs.readFileSync(runtimeStatePath(), 'utf8')) as RuntimeState;
+    try {
+      process.kill(s.pid, 0); // signal 0 = existence check
+    } catch {
+      return null; // stale file from a crashed/stopped gateway
+    }
+    return s;
+  } catch {
+    return null;
+  }
+}
+
 /** Path separators/casing differ — normalize for policy comparisons. */
 export function normalizePathForCompare(p: string): string {
   const resolved = path.resolve(p);
