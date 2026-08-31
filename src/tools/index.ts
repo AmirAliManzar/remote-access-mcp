@@ -15,6 +15,7 @@ import { registerSecurityTools } from './security.js';
 import { registerProjectTools } from './project.js';
 import { registerWebTools } from './web.js';
 import { registerPlanningTools } from './planning.js';
+import { registerOpsTools } from './ops.js';
 
 /**
  * Register every tool suite for this request's token context.
@@ -36,4 +37,5 @@ export function registerAllTools(server: McpServer, ctx: ToolContext): void {
   registerProjectTools(server, ctx);
   registerWebTools(server, ctx);
   registerPlanningTools(server, ctx);
+  registerOpsTools(server, ctx);
 }

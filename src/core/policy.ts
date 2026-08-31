@@ -26,6 +26,7 @@ export const TOOL_SCOPES: Record<string, string[]> = {
   planning: ['create_task_plan', 'task_status', 'workspace_snapshot', 'rollback_changes'],
   formatting: ['format_python', 'lint_python'],
   documents: ['create_document'],
+  ops: ['environment_inspect', 'nginx_inspect'],
 };
 
 /** Tools that mutate state — refused under read_only. */
