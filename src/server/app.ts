@@ -272,7 +272,7 @@ export function buildApp(state?: GatewayState): { app: express.Express; cfg: Ram
       const server = buildServerFor(token);
       const transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: () => gw.sessions.newId(),
-        enableJsonResponse: true,
+        enableJsonResponse: false,
         onsessioninitialized: (id: string) => {
           gw.sessions.set({ id, server, transport, tokenId, created: Date.now(), lastSeen: Date.now() });
         },
@@ -289,7 +289,7 @@ export function buildApp(state?: GatewayState): { app: express.Express; cfg: Ram
     const server = buildServerFor(token);
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
-      enableJsonResponse: true,
+      enableJsonResponse: false,
     });
     res.on('close', () => {
       transport.close().catch(() => {});

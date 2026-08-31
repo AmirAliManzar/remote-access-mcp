@@ -43,7 +43,10 @@ async function call(name: string, args: Record<string, unknown>): Promise<any> {
     headers: { 'Content-Type': 'application/json', 'Accept': 'application/json, text/event-stream' },
     body: JSON.stringify({ jsonrpc: '2.0', id: ++id, method: 'tools/call', params: { name, arguments: args } }),
   });
-  const j = await res.json();
+  // Responses are SSE-framed (event: message\ndata: {...}); unwrap the JSON.
+  const raw = await res.text();
+  const m = raw.match(/data: (.+)$/m);
+  const j = JSON.parse(m ? m[1] : raw);
   return j.result;
 }
 
