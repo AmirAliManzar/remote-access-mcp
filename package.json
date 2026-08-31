@@ -1,6 +1,6 @@
 {
   "name": "remote-access-mcp",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Turn any Linux server into an AI-agent-accessible machine via MCP. ChatGPT, Claude, and Grok connect over HTTPS and control files, shell, git, and more — securely and with zero Python dependencies.",
   "type": "module",
   "bin": {
