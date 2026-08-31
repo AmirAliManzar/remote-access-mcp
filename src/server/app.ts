@@ -89,6 +89,37 @@ export function buildApp(state?: GatewayState): { app: express.Express; cfg: Ram
     res.json({ status: 'ok', service: 'remote-access-mcp', version: PKG.version });
   });
 
+  // ---- metrics (Prometheus text format, opt-in via ?token= or Bearer) --------
+  app.get('/metrics', (req, res) => {
+    const presented = tokenFromAuthHeader(req) || (req.query.token as string) || null;
+    const t = authenticate(presented);
+    if (!t) return unauthorized(res);
+    const uptime = process.uptime();
+    const mem = process.memoryUsage().rss;
+    const auditRows = gw.audit ? gw.audit.query({ limit: 1000 }).length : 0;
+    const body = [
+      '# HELP ramcp_up Gateway is running',
+      '# TYPE ramcp_up gauge',
+      'ramcp_up 1',
+      '# HELP ramcp_uptime_seconds Gateway uptime',
+      '# TYPE ramcp_uptime_seconds gauge',
+      `ramcp_uptime_seconds ${Math.round(uptime)}`,
+      '# HELP ramcp_rss_bytes Resident memory',
+      '# TYPE ramcp_rss_bytes gauge',
+      `ramcp_rss_bytes ${mem}`,
+      '# HELP ramcp_tokens Number of configured tokens',
+      '# TYPE ramcp_tokens gauge',
+      `ramcp_tokens ${gw.cfg.tokens.length}`,
+      '# HELP ramcp_audit_rows Audit entries (recent window)',
+      '# TYPE ramcp_audit_rows gauge',
+      `ramcp_audit_rows ${auditRows}`,
+      '# HELP ramcp_read_only Global read-only mode',
+      '# TYPE ramcp_read_only gauge',
+      `ramcp_read_only ${gw.cfg.read_only ? 1 : 0}`,
+    ].join('\n') + '\n';
+    res.type('text/plain').send(body);
+  });
+
   // ---- connector -----------------------------------------------------------------
   app.get('/connector', (req, res) => {
     const presented = tokenFromAuthHeader(req);

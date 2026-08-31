@@ -61,11 +61,12 @@ Commands:
   service logs [-f]               Tail gateway logs
   service status                  Detailed service check
 
-  schedule list                   List scheduled tasks
+  schedule list [--json]         List scheduled tasks
+  upgrade [--dry-run]           Self-upgrade from npm + restart service
 
 Options:
   -h, --help                    Show this help
-  --json                         Machine-readable output (where supported)
+  --json                        Machine-readable output (where supported)
 `;
 
 // ---------------------------------------------------------------------------
@@ -613,11 +614,56 @@ export async function main(argv: string[]): Promise<void> {
     case 'doctor': await cmdDoctor(args); break;
     case 'service': cmdService(args); break;
     case 'status': cmdStatus(); break;
+    case 'schedule': cmdSchedule(args); break;
+    case 'upgrade': await cmdUpgrade(args); break;
     case 'version': console.log(PKG.version); break;
     case '': console.log(HELP); process.exit(0); break;
     default:
       console.error(`Unknown command: ${args.command}\n`);
       console.log(HELP);
       process.exit(1);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// schedule
+// ---------------------------------------------------------------------------
+function cmdSchedule(args: Args): void {
+  const p = path.join(os.homedir(), '.config', 'remote-access-mcp', 'schedule.json');
+  if (args.flags.has('json')) {
+    console.log(fs.existsSync(p) ? fs.readFileSync(p, 'utf8') : '[]');
+    return;
+  }
+  try {
+    const tasks = JSON.parse(fs.readFileSync(p, 'utf8'));
+    if (!tasks.length) { console.log('(no scheduled tasks)'); return; }
+    for (const t of tasks) {
+      console.log(`${t.id} | ${t.enabled ? 'on' : 'off'} | ${t.command} | next: ${t.next_run || t.run_at || '-'}`);
+    }
+  } catch { console.log('(no scheduled tasks)'); }
+}
+
+// ---------------------------------------------------------------------------
+// upgrade
+// ---------------------------------------------------------------------------
+async function cmdUpgrade(args: Args): Promise<void> {
+  const dryRun = args.flags.has('dry-run');
+  console.log(`current: v${PKG.version}`);
+  // Check latest from npm registry
+  const latest = await fetch('https://registry.npmjs.org/remote-access-mcp/latest')
+    .then(r => r.json())
+    .then((j: unknown) => (j as { version: string }).version)
+    .catch(() => null);
+  if (!latest) { console.error('could not reach npm registry'); process.exit(1); }
+  if (latest === PKG.version) { console.log('already up to date'); return; }
+  console.log(`latest:  v${latest}`);
+  if (dryRun) { console.log('(dry-run — no changes made)'); return; }
+  if (process.getuid?.() !== 0) { console.error('upgrade requires root (sudo)'); process.exit(1); }
+  console.log('upgrading…');
+  const { execFileSync } = await import('node:child_process');
+  execFileSync('npm', ['install', '-g', `remote-access-mcp@${latest}`], { stdio: 'inherit' });
+  if (isSystemdInstalled()) {
+    execFileSync('systemctl', ['restart', SERVICE_NAME]);
+    console.log(`service restarted on v${latest}`);
   }
 }
