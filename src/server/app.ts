@@ -53,6 +53,33 @@ export function buildApp(state?: GatewayState): { app: express.Express; cfg: Ram
   app.disable('x-powered-by');
   app.use(express.json({ limit: '64mb' }));
 
+  /**
+   * Normalize the Accept header for MCP endpoints.
+   *
+   * The SDK enforces the spec strictly: POST must accept BOTH
+   * application/json AND text/event-stream, GET must accept
+   * text/event-stream. Real clients are looser — some send only
+   * `application/json`, some only `text/event-stream`, some `*​/*`,
+   * and Claude's connector (python-httpx) sends a header combination the
+   * SDK rejects with 406, which surfaces as "Couldn't reach <server>".
+   *
+   * A 406 on the very first handshake is never what the operator wants, so
+   * we widen the header to the spec-compliant pair and let content
+   * negotiation happen where it matters: the response framing.
+   */
+  function normalizeAccept(req: Request): void {
+    const current = String(req.headers.accept || '');
+    const wantsJson = current.includes('application/json');
+    const wantsSse = current.includes('text/event-stream');
+    if (req.method === 'GET') {
+      if (!wantsSse) req.headers.accept = 'text/event-stream';
+      return;
+    }
+    if (!wantsJson || !wantsSse) {
+      req.headers.accept = 'application/json, text/event-stream';
+    }
+  }
+
   // ---- helpers --------------------------------------------------------------
   function unauthorized(res: Response, msg = 'Unauthorized'): void {
     res.status(401).json({ error: msg });
@@ -208,6 +235,7 @@ export function buildApp(state?: GatewayState): { app: express.Express; cfg: Ram
       res.status(429).json({ error: 'Too Many Requests' });
       return;
     }
+    normalizeAccept(req);
     gw.sessions.sweep();
 
     const sessionId = req.headers['mcp-session-id'];
