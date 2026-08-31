@@ -3,13 +3,14 @@ import { promisify } from 'node:util';
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { assertToolPermitted } from '../core/policy.js';
+import { shellCommand, childEnv, isWindows } from '../core/platform.js';
 import type { ToolContext } from '../core/context.js';
 
 const exec = promisify(execFile);
 const MAX_OUTPUT = 60_000;
 
-// Shell injection surface: we run bash -c by design (the tool IS a shell).
-// Guard rails: timeout, output cap, no TTY pty, cwd must exist.
+// Shell injection surface: we run a shell by design (the tool IS a shell).
+// Guard rails: timeout, output cap, no TTY, cwd policy-checked.
 export function registerShellTools(server: McpServer, ctx: ToolContext): void {
   const policy = () => ({
     allowed_paths: ctx.token.allowed_paths,
@@ -20,7 +21,7 @@ export function registerShellTools(server: McpServer, ctx: ToolContext): void {
   // ---- run_command -------------------------------------------------------
   server.registerTool('run_command',
     {
-      description: 'Execute a shell command (bash -c). Requires shell enabled for this token. 120s default timeout.',
+      description: 'Execute a shell command (bash/sh on POSIX, PowerShell/cmd on Windows). Requires shell enabled for this token. 120s default timeout.',
       inputSchema: {
         command: z.string().describe('Command line to run'),
         cwd: z.string().optional().describe('Working directory (policy-checked)'),
@@ -29,16 +30,18 @@ export function registerShellTools(server: McpServer, ctx: ToolContext): void {
     },
     async ({ command, cwd, timeout_ms }) => {
       if (!ctx.token.shell_enabled) {
-        return { content: [{ type: 'text', text: 'Shell execution is disabled for this token. Enable with `ramcp policy shell on` or `ramcp token add --shell`.' }], isError: true };
+        return { content: [{ type: 'text', text: 'Shell execution is disabled for this token. Enable with `ramcp policy shell on`.' }], isError: true };
       }
       assertToolPermitted({ tool: 'run_command', scopes: ctx.token.scopes, readOnly: ctx.readOnly, policy: policy(), target: cwd });
       const timeout = Math.min(timeout_ms, 600_000);
+      const { file, args } = shellCommand(command);
       try {
-        const { stdout, stderr } = await exec('bash', ['-lc', command], {
+        const { stdout, stderr } = await exec(file, args, {
           cwd: cwd || undefined,
           timeout,
           maxBuffer: 10 * 1024 * 1024,
-          env: { ...process.env, TERM: 'dumb', LANG: 'C.UTF-8' },
+          env: childEnv(),
+          windowsHide: true,
         });
         let out = '';
         if (stdout) out += stdout;
@@ -58,19 +61,36 @@ export function registerShellTools(server: McpServer, ctx: ToolContext): void {
   // ---- process_list ---------------------------------------------------------
   server.registerTool('process_list',
     {
-      description: 'List running processes (pid, ppid, user, cpu%, mem%, command). Sorted by CPU.',
+      description: 'List running processes with CPU/memory. Uses ps on POSIX, Get-Process on Windows.',
       inputSchema: {},
     },
     async () => {
       assertToolPermitted({ tool: 'process_list', scopes: ctx.token.scopes, readOnly: ctx.readOnly });
-      const { stdout } = await exec('ps', ['axo', 'pid,ppid,user,%cpu,%mem,comm', '--sort=-%cpu']);
-      return { content: [{ type: 'text', text: stdout.slice(0, MAX_OUTPUT) }] };
+      try {
+        if (isWindows()) {
+          const { file, args } = shellCommand(
+            'Get-Process | Sort-Object -Property CPU -Descending | Select-Object -First 40 Id,ProcessName,CPU,WS | Format-Table -AutoSize | Out-String -Width 200'
+          );
+          const { stdout } = await exec(file, args, { maxBuffer: 8 * 1024 * 1024, env: childEnv(), windowsHide: true });
+          return { content: [{ type: 'text', text: stdout.slice(0, MAX_OUTPUT) }] };
+        }
+        const { stdout } = await exec('ps', ['axo', 'pid,ppid,user,%cpu,%mem,comm', '--sort=-%cpu']);
+        return { content: [{ type: 'text', text: stdout.slice(0, MAX_OUTPUT) }] };
+      } catch (e: any) {
+        // BSD/macOS ps rejects --sort
+        try {
+          const { stdout } = await exec('ps', ['axo', 'pid,ppid,user,pcpu,pmem,comm']);
+          return { content: [{ type: 'text', text: stdout.slice(0, MAX_OUTPUT) }] };
+        } catch {
+          return { content: [{ type: 'text', text: e.message }], isError: true };
+        }
+      }
     });
 
   // ---- kill_process ----------------------------------------------------------
   server.registerTool('kill_process',
     {
-      description: 'Send a signal to a process. Requires shell enabled. Cannot kill the gateway itself.',
+      description: 'Send a signal to a process (SIGTERM/SIGKILL; on Windows the process is terminated). Cannot kill the gateway itself.',
       inputSchema: {
         pid: z.number().describe('Process ID'),
         signal: z.string().optional().default('SIGTERM').describe('Signal name, e.g. SIGTERM, SIGKILL'),
@@ -81,8 +101,8 @@ export function registerShellTools(server: McpServer, ctx: ToolContext): void {
         return { content: [{ type: 'text', text: 'Shell execution is disabled for this token.' }], isError: true };
       }
       assertToolPermitted({ tool: 'kill_process', scopes: ctx.token.scopes, readOnly: ctx.readOnly });
-      // Guardrail: the AI must not be able to kill the gateway or systemd.
-      if (pid === process.pid || pid === 1) {
+      // Guardrail: the AI must not be able to kill the gateway or init.
+      if (pid === process.pid || pid === process.ppid || (!isWindows() && pid === 1)) {
         return { content: [{ type: 'text', text: `Refusing to signal pid ${pid} (protected).` }], isError: true };
       }
       try {

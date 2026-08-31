@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { normalizePathForCompare } from './platform.js';
 
 export interface PolicyConfig {
   allowed_paths: string[];
@@ -58,6 +59,8 @@ export class ScopeError extends Error {
  * absolute, symlink-free where possible, `..` collapsed.
  * For not-yet-existing targets (write case), the deepest existing ancestor
  * is resolved and the remainder re-attached — symlinked parents still collapse.
+ *
+ * Cross-platform: handles Windows drive roots (C:\) as well as POSIX /.
  */
 export function resolveReal(p: string): string {
   const abs = path.resolve(p);
@@ -66,9 +69,12 @@ export function resolveReal(p: string): string {
   } catch {
     let dir = abs;
     const parts: string[] = [];
-    while (dir !== '/' && !fs.existsSync(dir)) {
+    // path.dirname('C:\\') === 'C:\\' and dirname('/') === '/' — both terminate.
+    while (!fs.existsSync(dir)) {
+      const parent = path.dirname(dir);
+      if (parent === dir) break; // reached a root that does not exist
       parts.unshift(path.basename(dir));
-      dir = path.dirname(dir);
+      dir = parent;
     }
     try {
       return path.join(fs.realpathSync(dir), ...parts);
@@ -79,9 +85,11 @@ export function resolveReal(p: string): string {
 }
 
 function isWithin(child: string, ancestor: string): boolean {
-  if (child === ancestor) return true;
-  const a = ancestor.endsWith('/') ? ancestor : ancestor + '/';
-  return child.startsWith(a);
+  const c = normalizePathForCompare(child);
+  const a = normalizePathForCompare(ancestor);
+  if (c === a) return true;
+  const prefix = a.endsWith('/') ? a : a + '/';
+  return c.startsWith(prefix);
 }
 
 export function isPathAllowed(policy: PolicyConfig, p: string): boolean {

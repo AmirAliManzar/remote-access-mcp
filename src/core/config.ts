@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
+import { dataDir, legacyDataDir } from './platform.js';
 
 // ---------------------------------------------------------------------------
 // v2 config schema — multi-token, per-token policy/scope/expiry/rate
@@ -30,6 +31,8 @@ export interface RamcpConfig {
   mcp_path: string;
   /** Additional endpoint paths served alongside mcp_path (e.g. legacy /mcp). */
   mcp_path_aliases?: string[];
+  /** Tunnel settings for laptops/desktops with no public IP. */
+  tunnel?: { provider: 'cloudflare'; auto_start: boolean };
   log_level: 'debug' | 'info' | 'warn' | 'error' | 'silent';
   audit: { enabled: boolean; db_path: string };
   read_only: boolean;             // global kill-switch for mutating tools
@@ -40,8 +43,11 @@ export interface RamcpConfig {
   denied_paths?: string[];
 }
 
-const CONFIG_DIR = path.join(os.homedir(), '.config', 'remote-access-mcp');
+// Config lives in the OS-appropriate per-user dir (AppData on Windows,
+// Library/Application Support on macOS, XDG config on Linux).
+const CONFIG_DIR = dataDir();
 const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json');
+const LEGACY_FILE = path.join(legacyDataDir(), 'config.json');
 
 export function configDir(): string { return CONFIG_DIR; }
 export function configPath(): string { return CONFIG_FILE; }
@@ -81,6 +87,22 @@ export function loadConfig(): RamcpConfig {
   let raw: any = {};
   if (fs.existsSync(CONFIG_FILE)) {
     raw = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
+  } else if (fs.existsSync(LEGACY_FILE)) {
+    // v2.x on Linux/macOS stored config in ~/.config; adopt it once and
+    // carry the audit log along, so upgrading never loses tokens.
+    raw = JSON.parse(fs.readFileSync(LEGACY_FILE, 'utf8'));
+    fs.mkdirSync(CONFIG_DIR, { recursive: true });
+    for (const f of ['audit.jsonl', 'schedule.json', 'plans.json', 'snapshots.json']) {
+      const from = path.join(legacyDataDir(), f);
+      const to = path.join(CONFIG_DIR, f);
+      if (fs.existsSync(from) && !fs.existsSync(to)) {
+        try { fs.copyFileSync(from, to); } catch { /* best effort */ }
+      }
+    }
+    if (typeof raw.audit?.db_path === 'string') {
+      raw.audit.db_path = path.join(CONFIG_DIR, path.basename(raw.audit.db_path));
+    }
+    saveConfig(raw);
   }
   // v1 shape? (flat token / no tokens array)
   if (!Array.isArray(raw.tokens)) {

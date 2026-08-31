@@ -1,11 +1,11 @@
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
-import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { assertToolPermitted, assertAllowed } from '../core/policy.js';
+import { dataDir } from '../core/platform.js';
 import type { ToolContext } from '../core/context.js';
 
 /**
@@ -30,7 +30,7 @@ interface Snapshot {
 }
 
 function storePath(kind: 'plans' | 'snapshots'): string {
-  return path.join(os.homedir(), '.config', 'remote-access-mcp', `${kind}.json`);
+  return path.join(dataDir(), `${kind}.json`);
 }
 
 function loadStore<T>(kind: 'plans' | 'snapshots'): T[] {
@@ -44,7 +44,7 @@ function saveStore<T>(kind: 'plans' | 'snapshots', data: T[]): void {
 }
 
 function snapDir(): string {
-  return path.join(os.homedir(), '.config', 'remote-access-mcp', 'snapshots');
+  return path.join(dataDir(), 'snapshots');
 }
 
 export function registerPlanningTools(server: McpServer, ctx: ToolContext): void {

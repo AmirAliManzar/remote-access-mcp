@@ -1,11 +1,11 @@
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { assertToolPermitted } from '../core/policy.js';
+import { dataDir, shellCommand, childEnv } from '../core/platform.js';
 import type { ToolContext } from '../core/context.js';
 
 const exec = promisify(execFile);
@@ -27,7 +27,7 @@ interface ScheduledTask {
 }
 
 function tasksPath(): string {
-  return path.join(os.homedir(), '.config', 'remote-access-mcp', 'schedule.json');
+  return path.join(dataDir(), 'schedule.json');
 }
 
 function loadTasks(): ScheduledTask[] {

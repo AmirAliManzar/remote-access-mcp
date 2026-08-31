@@ -98,10 +98,10 @@ describe('cli', () => {
     cli(['init']);
     cli(['policy', 'readonly', 'on']);
     const show = cli(['status']);
-    expect(show.out).toContain('read_only:        on');
+    expect(show.out).toMatch(/read_only:\s+on/);
     cli(['policy', 'readonly', 'off']);
     const show2 = cli(['status']);
-    expect(show2.out).toContain('read_only:        off');
+    expect(show2.out).toMatch(/read_only:\s+off/);
   });
 
   it('url prints connector URL with public host', () => {

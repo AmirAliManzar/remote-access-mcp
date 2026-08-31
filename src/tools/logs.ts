@@ -70,17 +70,36 @@ export function registerLogTools(server: McpServer, ctx: ToolContext): void {
   // ---- journal ----------------------------------------------------------------
   server.registerTool('journal',
     {
-      description: 'Query systemd journal for a unit. Returns last N entries. Safe for any unit name (validated).',
+      description: 'Query system logs for a service. journalctl on Linux, log show on macOS, Get-EventLog on Windows.',
       inputSchema: {
-        unit: z.string().regex(/^[A-Za-z0-9@._\\-]+$/, 'unit names only').describe('systemd unit name, e.g. nginx.service'),
+        unit: z.string().regex(/^[A-Za-z0-9@._\-]+$/, 'service/unit names only').describe('Service name, e.g. nginx.service (Linux) or a process name'),
         lines: z.number().optional().default(100).describe('Number of entries'),
       },
     },
     async ({ unit, lines }) => {
       assertToolPermitted({ tool: 'journal', scopes: ctx.token.scopes, readOnly: ctx.readOnly });
+      const { isWindows, isMac, which, shellCommand, childEnv } = await import('../core/platform.js');
+      const n = Math.min(lines, 500);
       try {
-        const { stdout } = await exec('journalctl', ['-u', unit, '-n', String(Math.min(lines, 500)), '--no-pager', '-o', 'short-iso']);
-        return { content: [{ type: 'text', text: stdout.slice(0, MAX) || '(empty)' }] };
+        if (isWindows()) {
+          const { file, args } = shellCommand(
+            `Get-WinEvent -MaxEvents ${n} -FilterHashtable @{LogName='System'} | ` +
+            `Where-Object { $_.ProviderName -like '*${unit.replace(/'/g, '')}*' -or $_.Message -like '*${unit.replace(/'/g, '')}*' } | ` +
+            `Select-Object TimeCreated,LevelDisplayName,ProviderName,Message | Format-List | Out-String -Width 200`
+          );
+          const { stdout } = await exec(file, args, { env: childEnv(), windowsHide: true, maxBuffer: 8 * 1024 * 1024 });
+          return { content: [{ type: 'text', text: stdout.slice(0, MAX) || '(no entries)' }] };
+        }
+        if (which('journalctl')) {
+          const { stdout } = await exec('journalctl', ['-u', unit, '-n', String(n), '--no-pager', '-o', 'short-iso']);
+          return { content: [{ type: 'text', text: stdout.slice(0, MAX) || '(empty)' }] };
+        }
+        if (isMac()) {
+          const { stdout } = await exec('log', ['show', '--last', '1h', '--style', 'compact', '--predicate', `process == "${unit.replace(/"/g, '')}"`], { maxBuffer: 8 * 1024 * 1024 });
+          const tail = stdout.split('\n').slice(-n).join('\n');
+          return { content: [{ type: 'text', text: tail.slice(0, MAX) || '(no entries)' }] };
+        }
+        return { content: [{ type: 'text', text: 'No system log backend found (journalctl/log/Get-WinEvent).' }], isError: true };
       } catch (e: any) {
         return { content: [{ type: 'text', text: e.message }], isError: true };
       }

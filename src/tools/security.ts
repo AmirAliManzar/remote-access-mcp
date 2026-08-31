@@ -83,13 +83,28 @@ export function registerSecurityTools(server: McpServer, ctx: ToolContext): void
   // ---- port_scan_local ----------------------------------------------------------
   server.registerTool('port_scan_local',
     {
-      description: 'List all listening TCP ports on this host with the owning process (ss -tlnp).',
+      description: 'List listening TCP ports with owning processes. ss/lsof on POSIX, Get-NetTCPConnection on Windows.',
       inputSchema: {},
     },
     async () => {
       assertToolPermitted({ tool: 'port_scan_local', scopes: ctx.token.scopes, readOnly: ctx.readOnly });
+      const { isWindows, shellCommand, childEnv, which } = await import('../core/platform.js');
       try {
-        const { stdout } = await exec('ss', ['-tlnp']);
+        if (isWindows()) {
+          const { file, args } = shellCommand(
+            'Get-NetTCPConnection -State Listen | Select-Object LocalAddress,LocalPort,OwningProcess,' +
+            '@{n="Process";e={(Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue).ProcessName}} | ' +
+            'Sort-Object LocalPort | Format-Table -AutoSize | Out-String -Width 200'
+          );
+          const { stdout } = await exec(file, args, { env: childEnv(), windowsHide: true });
+          return { content: [{ type: 'text', text: stdout }] };
+        }
+        if (which('ss')) {
+          const { stdout } = await exec('ss', ['-tlnp']);
+          return { content: [{ type: 'text', text: stdout }] };
+        }
+        // macOS / minimal Linux images
+        const { stdout } = await exec('lsof', ['-nP', '-iTCP', '-sTCP:LISTEN']);
         return { content: [{ type: 'text', text: stdout }] };
       } catch (e: any) {
         return { content: [{ type: 'text', text: e.message }], isError: true };
