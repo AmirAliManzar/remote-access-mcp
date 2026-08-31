@@ -205,8 +205,10 @@ export function buildApp(state?: GatewayState): { app: express.Express; cfg: Ram
     await transport.handleRequest(req, res, req.body);
   }
 
-  // ---- canonical route: /mcp (Authorization header) ------------------------------------
-  app.all('/mcp', async (req, res, next) => {
+  // ---- canonical route: <mcp_path> (Authorization header) --------------------------------
+  // Route paths may contain regex specials (e.g. /sse) — escape them.
+  const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  app.all(`/${esc(gw.cfg.mcp_path.replace(/^\//, ''))}`, async (req, res, next) => {
     try {
       const token = authenticate(tokenFromAuthHeader(req));
       if (!token) return unauthorized(res);
@@ -214,8 +216,8 @@ export function buildApp(state?: GatewayState): { app: express.Express; cfg: Ram
     } catch (e) { next(e); }
   });
 
-  // ---- token-in-path route: /<token>/mcp (ChatGPT-style) ----------------------------------
-  app.all('/:token/mcp', async (req, res, next) => {
+  // ---- token-in-path route: /<token><mcp_path> (ChatGPT-style) ----------------------------
+  app.all(`/:token${esc(gw.cfg.mcp_path)}`, async (req, res, next) => {
     try {
       const token = authenticate(req.params.token);
       if (!token) return unauthorized(res);
