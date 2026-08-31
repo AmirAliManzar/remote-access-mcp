@@ -28,6 +28,8 @@ export interface RamcpConfig {
   port: number;
   public_host: string;
   mcp_path: string;
+  /** Additional endpoint paths served alongside mcp_path (e.g. legacy /mcp). */
+  mcp_path_aliases?: string[];
   log_level: 'debug' | 'info' | 'warn' | 'error' | 'silent';
   audit: { enabled: boolean; db_path: string };
   read_only: boolean;             // global kill-switch for mutating tools
@@ -90,6 +92,18 @@ export function loadConfig(): RamcpConfig {
   if (typeof raw.audit?.db_path === 'string' && raw.audit.db_path.endsWith('.db')) {
     raw.audit.db_path = raw.audit.db_path.replace(/\.db$/, '.jsonl');
     saveConfig(raw);
+  }
+  // v2.1.2→v2.1.3: when the primary path moved off /mcp, keep /mcp alive as a
+  // legacy alias so already-registered connectors (Grok, older ChatGPT entries)
+  // keep working instead of silently 404ing.
+  if (typeof raw.mcp_path === 'string' && raw.mcp_path !== '/mcp') {
+    const aliases = new Set(raw.mcp_path_aliases || []);
+    aliases.add('/mcp');
+    const list = [...aliases].filter(a => a !== raw.mcp_path);
+    if (list.length !== (raw.mcp_path_aliases || []).length) {
+      raw.mcp_path_aliases = list;
+      saveConfig(raw);
+    }
   }
   return raw as RamcpConfig;
 }

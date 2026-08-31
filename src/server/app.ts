@@ -208,22 +208,27 @@ export function buildApp(state?: GatewayState): { app: express.Express; cfg: Ram
   // ---- canonical route: <mcp_path> (Authorization header) --------------------------------
   // Route paths may contain regex specials (e.g. /sse) — escape them.
   const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  app.all(`/${esc(gw.cfg.mcp_path.replace(/^\//, ''))}`, async (req, res, next) => {
-    try {
-      const token = authenticate(tokenFromAuthHeader(req));
-      if (!token) return unauthorized(res);
-      await handleMcp(req, res, token);
-    } catch (e) { next(e); }
-  });
-
-  // ---- token-in-path route: /<token><mcp_path> (ChatGPT-style) ----------------------------
-  app.all(`/:token${esc(gw.cfg.mcp_path)}`, async (req, res, next) => {
-    try {
-      const token = authenticate(req.params.token);
-      if (!token) return unauthorized(res);
-      await handleMcp(req, res, token);
-    } catch (e) { next(e); }
-  });
+  const bare = (p: string) => esc(p.replace(/^\//, ''));
+  const registerMcpRoutes = (mcpPath: string): void => {
+    app.all(`/${bare(mcpPath)}`, async (req, res, next) => {
+      try {
+        const token = authenticate(tokenFromAuthHeader(req));
+        if (!token) return unauthorized(res);
+        await handleMcp(req, res, token);
+      } catch (e) { next(e); }
+    });
+    // ---- token-in-path route: /<token><mcpPath> (ChatGPT-style) -------------------------
+    app.all(`/:token${esc(mcpPath)}`, async (req, res, next) => {
+      try {
+        const token = authenticate(req.params.token);
+        if (!token) return unauthorized(res);
+        await handleMcp(req, res, token);
+      } catch (e) { next(e); }
+    });
+  };
+  registerMcpRoutes(gw.cfg.mcp_path);
+  // Legacy aliases (e.g. /mcp after a move to /sse) — existing connectors keep working.
+  for (const alias of gw.cfg.mcp_path_aliases || []) registerMcpRoutes(alias);
 
   // ---- 404 + error -------------------------------------------------------------------
   app.use((req, res) => {
