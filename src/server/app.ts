@@ -1,5 +1,6 @@
 import express, { type Request, type Response, type NextFunction } from 'express';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -25,7 +26,7 @@ export interface GatewayState {
 
 export function createGatewayState(): GatewayState {
   const cfg = loadLiveConfig();
-  const watcher = new ConfigWatcher(path.join(require('node:os').homedir(), '.config', 'remote-access-mcp', 'config.json'));
+  const watcher = new ConfigWatcher(path.join(os.homedir(), '.config', 'remote-access-mcp', 'config.json'));
   const audit = cfg.audit.enabled ? new AuditLog(cfg.audit.db_path) : null;
   const limiter = new RateLimiter(120, 2); // 120 burst, 2/sec refill per token
 

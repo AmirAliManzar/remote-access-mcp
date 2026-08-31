@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { z } from 'zod';
@@ -29,7 +30,6 @@ interface Snapshot {
 }
 
 function storePath(kind: 'plans' | 'snapshots'): string {
-  const os = require('node:os') as typeof import('node:os');
   return path.join(os.homedir(), '.config', 'remote-access-mcp', `${kind}.json`);
 }
 
@@ -44,7 +44,6 @@ function saveStore<T>(kind: 'plans' | 'snapshots', data: T[]): void {
 }
 
 function snapDir(): string {
-  const os = require('node:os') as typeof import('node:os');
   return path.join(os.homedir(), '.config', 'remote-access-mcp', 'snapshots');
 }
 
