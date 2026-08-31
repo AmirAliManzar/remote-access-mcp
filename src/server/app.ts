@@ -14,6 +14,7 @@ import { tokensMatch } from '../core/crypto.js';
 import { registerAllTools } from '../tools/index.js';
 import { startScheduler } from '../tools/schedule.js';
 import { SessionStore } from './sessions.js';
+import { LegacySseStore } from './legacy-sse.js';
 
 const PKG_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const PKG = JSON.parse(fs.readFileSync(path.join(PKG_ROOT, 'package.json'), 'utf8'));
@@ -24,6 +25,7 @@ export interface GatewayState {
   audit: AuditLog | null;
   limiter: RateLimiter;
   sessions: SessionStore;
+  legacySse: LegacySseStore;
   reload(): void;
 }
 
@@ -36,6 +38,7 @@ export function createGatewayState(): GatewayState {
   const state: GatewayState = {
     cfg, watcher, audit, limiter,
     sessions: new SessionStore(),
+    legacySse: new LegacySseStore(),
     reload() {
       if (watcher.changed()) {
         state.cfg = loadLiveConfig();
@@ -296,20 +299,107 @@ export function buildApp(state?: GatewayState): { app: express.Express; cfg: Ram
     await transport.handleRequest(req, res, req.body);
   }
 
-  // ---- canonical route: <mcp_path> (Authorization header) --------------------------------
+  /**
+   * Legacy SSE transport (MCP 2024-11-05).
+   *
+   * A GET on the endpoint opens a long-lived event stream and announces the
+   * POST-back URL via `event: endpoint`. Claude's connector picks this
+   * transport automatically whenever the URL ends in `/sse`, so the endpoint
+   * must answer GET with a stream instead of Streamable HTTP semantics.
+   */
+  async function handleLegacySseOpen(req: Request, res: Response, token: TokenRecord, basePath: string): Promise<void> {
+    if (rateLimited(token)) {
+      res.status(429).json({ error: 'Too Many Requests' });
+      return;
+    }
+    const tokenId = AuditLog.fingerprint(token.token);
+    // POST-back path lives beside the stream path so the token stays in the URL.
+    const messagesPath = `${basePath}/messages`;
+
+    const { SSEServerTransport } = await import('@modelcontextprotocol/sdk/server/sse.js');
+    const server = buildServerFor(token);
+    const transport = new SSEServerTransport(messagesPath, res);
+
+    transport.onclose = () => gw.legacySse.delete(transport.sessionId);
+    res.on('close', () => gw.legacySse.delete(transport.sessionId));
+
+    await server.connect(transport); // connect() calls start(), writing the SSE head
+    gw.legacySse.add({ id: transport.sessionId, server, transport, tokenId, created: Date.now() }, res);
+  }
+
+  /** POST-back leg of the legacy transport: /<token>/<path>/messages?sessionId=… */
+  async function handleLegacySseMessage(req: Request, res: Response, token: TokenRecord): Promise<void> {
+    if (rateLimited(token)) {
+      res.status(429).json({ error: 'Too Many Requests' });
+      return;
+    }
+    const raw = req.query.sessionId;
+    const sid = Array.isArray(raw) ? String(raw[0]) : (raw ? String(raw) : '');
+    if (!sid) {
+      res.status(400).json({ error: 'sessionId query parameter required' });
+      return;
+    }
+    const session = gw.legacySse.get(sid);
+    if (!session) {
+      res.status(404).json({ error: 'Session not found — reopen the SSE stream' });
+      return;
+    }
+    if (session.tokenId !== AuditLog.fingerprint(token.token)) {
+      res.status(403).json({ error: 'Session belongs to a different token' });
+      return;
+    }
+    await session.transport.handlePostMessage(req, res, req.body);
+  }
+
+  // ---- routes ---------------------------------------------------------------------------
   // Route paths may contain regex specials (e.g. /sse) — escape them.
   const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const bare = (p: string) => esc(p.replace(/^\//, ''));
+
   const registerMcpRoutes = (mcpPath: string): void => {
-    app.all(`/${bare(mcpPath)}`, async (req, res, next) => {
+    const clean = mcpPath.replace(/\/+$/, '');
+
+    // --- legacy SSE POST-back leg (must be registered before the catch-alls) ---
+    app.post(`/${bare(clean)}/messages`, async (req, res, next) => {
+      try {
+        const token = authenticate(tokenFromAuthHeader(req));
+        if (!token) return unauthorized(res);
+        await handleLegacySseMessage(req, res, token);
+      } catch (e) { next(e); }
+    });
+    app.post(`/:token${esc(clean)}/messages`, async (req, res, next) => {
+      try {
+        const token = authenticate(req.params.token);
+        if (!token) return unauthorized(res);
+        await handleLegacySseMessage(req, res, token);
+      } catch (e) { next(e); }
+    });
+
+    // --- GET opens a legacy SSE stream; POST/DELETE use Streamable HTTP ---
+    app.get(`/${bare(clean)}`, async (req, res, next) => {
+      try {
+        const token = authenticate(tokenFromAuthHeader(req));
+        if (!token) return unauthorized(res);
+        await handleLegacySseOpen(req, res, token, clean);
+      } catch (e) { next(e); }
+    });
+    app.get(`/:token${esc(clean)}`, async (req, res, next) => {
+      try {
+        const token = authenticate(req.params.token);
+        if (!token) return unauthorized(res);
+        await handleLegacySseOpen(req, res, token, `/${req.params.token}${clean}`);
+      } catch (e) { next(e); }
+    });
+
+    app.all(`/${bare(clean)}`, async (req, res, next) => {
       try {
         const token = authenticate(tokenFromAuthHeader(req));
         if (!token) return unauthorized(res);
         await handleMcp(req, res, token);
       } catch (e) { next(e); }
     });
-    // ---- token-in-path route: /<token><mcpPath> (ChatGPT-style) -------------------------
-    app.all(`/:token${esc(mcpPath)}`, async (req, res, next) => {
+    // token-in-path route: /<token><mcpPath> (ChatGPT-style)
+    app.all(`/:token${esc(clean)}`, async (req, res, next) => {
       try {
         const token = authenticate(req.params.token);
         if (!token) return unauthorized(res);
@@ -317,6 +407,7 @@ export function buildApp(state?: GatewayState): { app: express.Express; cfg: Ram
       } catch (e) { next(e); }
     });
   };
+
   registerMcpRoutes(gw.cfg.mcp_path);
   // Legacy aliases (e.g. /mcp after a move to /sse) — existing connectors keep working.
   for (const alias of gw.cfg.mcp_path_aliases || []) registerMcpRoutes(alias);
