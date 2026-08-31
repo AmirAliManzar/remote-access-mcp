@@ -1,6 +1,6 @@
 {
   "name": "remote-access-mcp",
-  "version": "2.2.4",
+  "version": "2.3.0",
   "description": "Turn any Linux server into an AI-agent-accessible machine via MCP. ChatGPT, Claude, and Grok connect over HTTPS and control files, shell, git, and more — securely and with zero Python dependencies.",
   "type": "module",
   "bin": {
@@ -15,7 +15,7 @@
     "install.sh"
   ],
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=20.18.1"
   },
   "scripts": {
     "build": "tsc",
@@ -49,9 +49,14 @@
   "homepage": "https://github.com/AmirAliManzar/remote-access-mcp#readme",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.20.0",
-    "express": "^4.21.0",
+    "@upstash/context7-mcp": "^4.0.4",
     "better-sqlite3": "^11.6.0",
+    "codebase-memory-mcp": "^0.10.8",
+    "express": "^4.21.0",
     "zod": "^3.24.0"
+  },
+  "optionalDependencies": {
+    "context-mode": "^1.0.169"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.12",
@@ -60,5 +65,13 @@
     "tsx": "^4.19.0",
     "typescript": "^5.7.0",
     "vitest": "^2.1.0"
+  },
+  "allowScripts": {
+    "codebase-memory-mcp@0.10.8": true,
+    "context-mode@1.0.169": true,
+    "better-sqlite3@11.10.0": true,
+    "better-sqlite3@12.11.1": true,
+    "esbuild@0.28.2": true,
+    "esbuild@0.21.5": true
   }
 }

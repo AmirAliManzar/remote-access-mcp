@@ -172,7 +172,7 @@ export function buildApp(state?: GatewayState): { app: express.Express; cfg: Ram
    * Build a fully-wired McpServer for one token. Tools are registered fresh so
    * policy edits (CLI or in-chat) take effect on the next server build.
    */
-  function buildServerFor(token: TokenRecord): McpServer {
+  async function buildServerFor(token: TokenRecord): Promise<McpServer> {
     const server = new McpServer(
       { name: PKG.name, version: PKG.version },
       { capabilities: { tools: { listChanged: true } } },
@@ -219,7 +219,7 @@ export function buildApp(state?: GatewayState): { app: express.Express; cfg: Ram
       return origRegister(name, config, wrapped);
     };
 
-    registerAllTools(server, ctx);
+    await registerAllTools(server, ctx);
     return server;
   }
 
@@ -269,7 +269,7 @@ export function buildApp(state?: GatewayState): { app: express.Express; cfg: Ram
 
     // --- initialize without a session: open a stateful one ---
     if (req.method === 'POST' && isInitializeRequest(req.body)) {
-      const server = buildServerFor(token);
+      const server = await buildServerFor(token);
       const transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: () => gw.sessions.newId(),
         enableJsonResponse: false,
@@ -286,7 +286,7 @@ export function buildApp(state?: GatewayState): { app: express.Express; cfg: Ram
     }
 
     // --- stateless fallback: self-contained request, throwaway transport ---
-    const server = buildServerFor(token);
+    const server = await buildServerFor(token);
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
       enableJsonResponse: false,
@@ -317,7 +317,7 @@ export function buildApp(state?: GatewayState): { app: express.Express; cfg: Ram
     const messagesPath = `${basePath}/messages`;
 
     const { SSEServerTransport } = await import('@modelcontextprotocol/sdk/server/sse.js');
-    const server = buildServerFor(token);
+    const server = await buildServerFor(token);
     const transport = new SSEServerTransport(messagesPath, res);
 
     transport.onclose = () => gw.legacySse.delete(transport.sessionId);

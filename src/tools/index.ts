@@ -16,12 +16,13 @@ import { registerProjectTools } from './project.js';
 import { registerWebTools } from './web.js';
 import { registerPlanningTools } from './planning.js';
 import { registerOpsTools } from './ops.js';
+import { registerIntegrationTools } from './integrations.js';
 
 /**
  * Register every tool suite for this request's token context.
  * Fresh registration per request → policy mutations apply instantly.
  */
-export function registerAllTools(server: McpServer, ctx: ToolContext): void {
+export async function registerAllTools(server: McpServer, ctx: ToolContext): Promise<void> {
   registerSystemTools(server, ctx);
   registerFilesystemTools(server, ctx);
   registerShellTools(server, ctx);
@@ -38,4 +39,11 @@ export function registerAllTools(server: McpServer, ctx: ToolContext): void {
   registerWebTools(server, ctx);
   registerPlanningTools(server, ctx);
   registerOpsTools(server, ctx);
+
+  // Integration subprocesses are disabled in the unit-test environment so
+  // core transport/auth tests stay deterministic. Production loads them
+  // before the MCP transport connects, so the initial tools/list is complete.
+  if (process.env.NODE_ENV !== 'test' && !process.env.VITEST) {
+    await registerIntegrationTools(server, ctx);
+  }
 }

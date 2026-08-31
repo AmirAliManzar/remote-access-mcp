@@ -173,3 +173,17 @@ MIT — see [LICENSE](LICENSE).
 ---
 
 📚 [README فارسی](README.fa.md) | [Roadmap](ROADMAP.md)
+
+## Optional MCP integrations
+
+Remote Access MCP 2.3 adds a small integration layer for developer-context MCPs:
+
+- **Context7** — proxied into the gateway as namespaced tools such as `context7_resolve-library-id` and `context7_query-docs`. The MIT-licensed `@upstash/context7-mcp` package is bundled as a normal dependency. A `CONTEXT7_API_KEY` environment variable can be supplied for higher limits/private repositories.
+- **Codebase Memory** — the MIT-licensed `codebase-memory-mcp` package is integrated as namespaced `codebase_memory_*` tools. Set `RAMCP_CODEBASE_ROOT` to the repository that this gateway instance should expose to Codebase Memory. `index_repository` is additionally restricted by Remote Access MCP to that root.
+- **Context Mode** — shipped as an optional local dependency only. It is a client/plugin-side context optimization layer and is **not proxied as a hosted service** because its Elastic License 2.0 prohibits providing the software as a hosted or managed service.
+
+Integrations are loaded before the MCP transport connects, so the initial `tools/list` includes them when the upstream MCP is available. If an optional integration cannot start, the core Remote Access MCP remains available and the integration is omitted with a diagnostic message.
+
+### Context Mode local setup
+
+The `context-mode` package is intentionally kept as an optional dependency. Install Remote Access MCP locally, then configure the detected coding agent to run the local `context-mode` executable according to the upstream Context Mode documentation. Do not expose its MCP server through a Remote Access MCP HTTP endpoint.
