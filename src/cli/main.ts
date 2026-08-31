@@ -139,7 +139,7 @@ function cmdInit(args: Args): void {
     public_host: '',
     mcp_path: '/mcp',
     log_level: 'info',
-    audit: { enabled: true, db_path: path.join(configDir(), 'audit.db') },
+    audit: { enabled: true, db_path: path.join(configDir(), 'audit.jsonl') },
     read_only: false,
     tokens: [],
   };
@@ -417,7 +417,7 @@ async function cmdDoctor(args: Args): Promise<void> {
   }
 
   // 6. audit chain
-  if (cfg.audit.enabled && fs.existsSync(cfg.audit.db_path)) {
+  if (cfg.audit.enabled && fs.existsSync(cfg.audit.db_path.replace(/\.db$/, '') + '.jsonl')) {
     const audit = new AuditLog(cfg.audit.db_path);
     const tampered = audit.verify();
     tampered === null ? ok('audit', 'hash chain intact') : bad('audit', `tampered at row ${tampered}`);

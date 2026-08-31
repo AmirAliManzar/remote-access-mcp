@@ -43,7 +43,7 @@ const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json');
 
 export function configDir(): string { return CONFIG_DIR; }
 export function configPath(): string { return CONFIG_FILE; }
-export function defaultAuditPath(): string { return path.join(CONFIG_DIR, 'audit.db'); }
+export function defaultAuditPath(): string { return path.join(CONFIG_DIR, 'audit.jsonl'); }
 
 // ---------------------------------------------------------------------------
 // Migration: v1 flat config → v2 token record
@@ -85,6 +85,11 @@ export function loadConfig(): RamcpConfig {
     const migrated = migrateV1(raw);
     saveConfig(migrated); // persist immediately so we never re-migrate
     return migrated;
+  }
+  // v2.0→v2.0.2 audit path migration (.db → .jsonl, format switched off better-sqlite3)
+  if (typeof raw.audit?.db_path === 'string' && raw.audit.db_path.endsWith('.db')) {
+    raw.audit.db_path = raw.audit.db_path.replace(/\.db$/, '.jsonl');
+    saveConfig(raw);
   }
   return raw as RamcpConfig;
 }
