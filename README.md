@@ -23,7 +23,14 @@ The server binds to `127.0.0.1` only. You put it behind nginx (with Cloudflare o
 
 ## Install
 
-### One-liner (any Ubuntu/Debian server)
+### Any machine with Node 18+ — Linux, macOS, or Windows
+
+```bash
+npm install -g remote-access-mcp
+ramcp init
+```
+
+### One-liner (Ubuntu/Debian servers)
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/AmirAliManzar/remote-access-mcp/main/install.sh | bash
@@ -39,6 +46,8 @@ ramcp init
 
 ## Quick start
 
+On a **server** with a domain:
+
 ```bash
 ramcp init                          # config + first token
 ramcp policy allow /srv/myapp       # what the AI may touch
@@ -47,6 +56,18 @@ ramcp service install --domain mcp.example.com   # systemd + nginx
 ramcp doctor                        # verify everything end-to-end
 ramcp url                           # connector URL for your chatbot
 ```
+
+On a **laptop or desktop** (no domain, no port forwarding):
+
+```bash
+ramcp tunnel
+# → downloads cloudflared on first run (no account needed),
+#   prints a public https URL like https://random-words.trycloudflare.com
+# `ramcp url` in another terminal shows the live connector link.
+```
+
+Works the same on Windows, macOS, and Linux — PowerShell/cmd on Windows,
+launchd on macOS, systemd on Linux for the autostart service.
 
 ## Commands
 
@@ -164,7 +185,7 @@ cd remote-access-mcp
 npm ci && npm run build && npm test
 ```
 
-42 tests: policy engine, auth matrix, tools-over-MCP integration, full v2 security matrix (scopes, read-only, SSRF, injection, audit chain), CLI lifecycle. CI runs on Node 18/20/22.
+96 tests: policy engine, auth matrix, transport compatibility (stateful, stateless, legacy SSE), cross-platform platform layer, tunnel wiring, CLI lifecycle, crash regressions. CI runs on Node 18/20/22.
 
 ## License
 

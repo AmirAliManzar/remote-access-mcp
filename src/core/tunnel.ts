@@ -107,6 +107,10 @@ export async function startQuickTunnel(opts: {
   const child = spawn(bin, [
     'tunnel',
     '--no-autoupdate',
+    // QUIC (UDP) is blocked or throttled on some networks — Iranian ISPs and
+    // some corporate firewalls, most notably. http2 over TCP is slower to
+    // establish but far more likely to actually carry traffic there.
+    '--protocol', 'http2',
     '--url', `http://${host}:${port}`,
   ], { stdio: ['ignore', 'pipe', 'pipe'] });
 

@@ -24,6 +24,8 @@ ramcp init
 
 ## شروع سریع
 
+روی **سرور** با دامنه:
+
 ```bash
 ramcp init                          # کانفیگ + اولین توکن
 ramcp policy allow /srv/myapp       # چه مسیرهایی رو AI ببینه
@@ -32,6 +34,17 @@ ramcp service install --domain mcp.example.com   # systemd + nginx
 ramcp doctor                        # بررسی سلامت همه‌چیز
 ramcp url                           # URL کانکتور برای چت‌بات
 ```
+
+روی **لپ‌تاپ / دسکتاپ** (بدون دامنه و بدون پورت‌فوروارد):
+
+```bash
+ramcp tunnel
+# → دفعه اول cloudflared رو خودکار دانلود می‌کنه (بدون نیاز به اکانت)
+#   یه URL عمومی https میده مثل https://random-words.trycloudflare.com
+# دستور `ramcp url` توی ترمینال دیگه، لینک زنده کانکتور رو نشون میده.
+```
+
+روی ویندوز، مک و لینوکس یکسانه — PowerShell/cmd روی ویندوز، launchd روی مک، systemd روی لینوکس برای سرویس خودکار.
 
 ## توکن‌های چندگانه — کمترین دسترسی به‌صورت پیش‌فرض
 

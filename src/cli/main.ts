@@ -13,6 +13,7 @@ import { resolveReal, TOOL_SCOPES } from '../core/policy.js';
 import { AuditLog } from '../core/audit.js';
 import {
   platform, isWindows, isMac, isLinux, hasSystemd, which, platformLabel,
+  readRuntimeState,
 } from '../core/platform.js';
 import { ensureCloudflared, startQuickTunnel, resolveCloudflared } from '../core/tunnel.js';
 
@@ -220,6 +221,17 @@ async function cmdTunnel(args: Args): Promise<void> {
 function cmdUrl(args: Args): void {
   const cfg = loadConfig();
   const t = findToken(cfg, args.sub[0] || args.values.get('token'));
+
+  // A live tunnel (pid-checked) wins: its URL only exists while that
+  // gateway process runs, and it is the address chatbots must use right now.
+  const rt = readRuntimeState();
+  if (rt?.tunnel_url) {
+    const base = rt.tunnel_url.replace(/\/+$/, '');
+    console.log(`${base}/${t.token}${cfg.mcp_path}`);
+    console.log(`\n(live tunnel — pid ${rt.pid}, since ${rt.started})`);
+    return;
+  }
+
   const host = cfg.public_host || `${cfg.host}:${cfg.port}`;
   const scheme = cfg.public_host ? 'https' : 'http';
   console.log(`${scheme}://${host}/${t.token}${cfg.mcp_path}`);
@@ -476,6 +488,20 @@ async function cmdDoctor(args: Args): Promise<void> {
   // tunnel readiness
   const cf = resolveCloudflared();
   cf ? ok('tunnel', `cloudflared ready (${cf})`) : warn('tunnel', 'cloudflared not installed yet — `ramcp tunnel` downloads it automatically');
+
+  // live tunnel state (a running `ramcp tunnel` in another terminal)
+  const rt = readRuntimeState();
+  if (rt?.tunnel_url) {
+    try {
+      const resp = await fetch(`${rt.tunnel_url}/health`, { signal: AbortSignal.timeout(8000) });
+      const body = (await resp.json()) as { status?: string };
+      body.status === 'ok'
+        ? ok('tunnel-live', `${rt.tunnel_url} (pid ${rt.pid})`)
+        : warn('tunnel-live', `edge answered ${resp.status}`);
+    } catch (e: any) {
+      warn('tunnel-live', `runtime state says pid ${rt.pid}, but unreachable (${e.message})`);
+    }
+  }
 
   // public reachability
   if (cfg.public_host) {
@@ -752,11 +778,14 @@ function uninstallService(): void {
 // ---------------------------------------------------------------------------
 function cmdStatus(): void {
   const cfg = loadConfig();
+  const rt = readRuntimeState();
   console.log(`platform:          ${platformLabel()}`);
   console.log(`config:            ${configPath()}`);
   console.log(`${serviceLabel()}:${' '.repeat(Math.max(1, 19 - serviceLabel().length - 1))}${serviceIsInstalled() ? (serviceIsActive() ? 'installed, active' : 'installed, inactive') : 'not installed'}`);
   console.log(`listen:            ${cfg.host}:${cfg.port}${cfg.mcp_path}`);
+  console.log(`gateway process:   ${rt ? `running (pid ${rt.pid})` : 'not running'}`);
   console.log(`public_host:       ${cfg.public_host || '(none — use `ramcp tunnel`)'}`);
+  console.log(`live tunnel:       ${rt?.tunnel_url || '(none)'}`);
   console.log(`tokens:            ${cfg.tokens.length}`);
   console.log(`allowed paths:     ${cfg.tokens.reduce((n, t) => n + t.allowed_paths.length, 0)}`);
   console.log(`audit:             ${cfg.audit.enabled ? 'on' : 'off'}`);
