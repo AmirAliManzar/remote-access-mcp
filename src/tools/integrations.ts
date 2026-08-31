@@ -17,7 +17,9 @@ function safeName(name: string): string {
 export async function registerIntegrationTools(server: McpServer, _ctx: ToolContext): Promise<void> {
     const targets = [
         { name: 'context7' as const, prefix: 'context7' },
-        { name: 'codebase-memory' as const, prefix: 'codebase_memory' },
+        ...(process.env.RAMCP_ENABLE_CODEBASE_MEMORY === '1'
+            ? [{ name: 'codebase-memory' as const, prefix: 'codebase_memory' }]
+            : []),
     ];
 
     for (const target of targets) {

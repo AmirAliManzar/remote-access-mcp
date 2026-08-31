@@ -77,7 +77,7 @@ MIT — [LICENSE](LICENSE)
 در نسخه ۲.۳، یک لایهٔ یکپارچه‌سازی برای ابزارهای توسعه‌دهنده اضافه شده است:
 
 - **Context7** — به‌صورت ابزارهای نام‌گذاری‌شده مانند `context7_resolve-library-id` و `context7_get-library-docs` داخل دروازه در دسترس قرار می‌گیرد.
-- **Codebase Memory** — ابزارهای `codebase_memory_*` را ارائه می‌کند. با `RAMCP_CODEBASE_ROOT` ریشهٔ مخزن کدی را که این نمونه باید در اختیار Codebase Memory قرار دهد مشخص کنید؛ `index_repository` نیز در خود Remote Access MCP به همین ریشه محدود شده است.
+- **Codebase Memory** — در صورت تنظیم `RAMCP_ENABLE_CODEBASE_MEMORY=1` ابزارهای `codebase_memory_*` را ارائه می‌کند. این یکپارچه‌سازی عمداً اختیاری است، چون Codebase Memory از daemon و cache بومیِ سطح حساب استفاده می‌کند و نباید بدون هماهنگی با نشست‌های دیگر آن multiplex شود. با `RAMCP_CODEBASE_ROOT` ریشهٔ مخزن کدی را که این نمونه باید در اختیار Codebase Memory قرار دهد مشخص کنید؛ `index_repository` نیز در خود Remote Access MCP به همین ریشه محدود شده است.
 - **Context Mode** — فقط به‌عنوان وابستگی اختیاری محلی نصب می‌شود و به‌عنوان سرویس میزبانی‌شده از طریق Remote Access MCP ارائه نمی‌شود، چون مجوز Elastic License 2.0 آن ارائهٔ نرم‌افزار به‌عنوان سرویس میزبانی‌شده یا مدیریت‌شده را محدود می‌کند.
 
 اگر یک یکپارچه‌سازی اختیاری در زمان راه‌اندازی قابل اجرا نباشد، هستهٔ Remote Access MCP همچنان در دسترس می‌ماند و آن یکپارچه‌سازی با پیام تشخیصی کنار گذاشته می‌شود.
