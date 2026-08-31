@@ -375,19 +375,34 @@ export function buildApp(state?: GatewayState): { app: express.Express; cfg: Ram
       } catch (e) { next(e); }
     });
 
-    // --- GET opens a legacy SSE stream; POST/DELETE use Streamable HTTP ---
+    // --- GET: session-aware dispatch ------------------------------------------------
+    // A GET with an Mcp-Session-Id header is a Streamable HTTP client opening
+    // its server→client notification stream — route it to that session's
+    // transport. A GET WITHOUT the id is a legacy-SSE client (Claude picks
+    // this automatically for /sse URLs) starting the 2024-11-05 handshake.
+    // Mixing these up poisons the streamable client: it would receive the
+    // legacy `event: endpoint` frame, log "Unknown SSE event: endpoint",
+    // and abort the whole TaskGroup.
     app.get(`/${bare(clean)}`, async (req, res, next) => {
       try {
         const token = authenticate(tokenFromAuthHeader(req));
         if (!token) return unauthorized(res);
-        await handleLegacySseOpen(req, res, token, clean);
+        if (req.headers['mcp-session-id']) {
+          await handleMcp(req, res, token);
+        } else {
+          await handleLegacySseOpen(req, res, token, clean);
+        }
       } catch (e) { next(e); }
     });
     app.get(`/:token${esc(clean)}`, async (req, res, next) => {
       try {
         const token = authenticate(req.params.token);
         if (!token) return unauthorized(res);
-        await handleLegacySseOpen(req, res, token, `/${req.params.token}${clean}`);
+        if (req.headers['mcp-session-id']) {
+          await handleMcp(req, res, token);
+        } else {
+          await handleLegacySseOpen(req, res, token, `/${req.params.token}${clean}`);
+        }
       } catch (e) { next(e); }
     });
 
