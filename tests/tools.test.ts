@@ -1,6 +1,9 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import http from 'node:http';
-import { buildApp } from '../src/server/app.js';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { buildApp, type GatewayState } from '../src/server/app.js';
 
 const TEST_TOKEN = 'test-token-tools456';
 
@@ -8,9 +11,22 @@ let server: http.Server;
 let baseUrl: string;
 
 beforeAll(async () => {
-  process.env.RAMCP_TOKEN = TEST_TOKEN;
-  process.env.RAMCP_SHELL = '0';   // hermetic: never inherit the host's real config
-  const { app } = buildApp();
+  // Hermetic: build the gateway state explicitly — never read the host's
+  // real config (the production server may run with a different mcp_path).
+  const { createGatewayState } = await import('../src/server/app.js');
+  const state: GatewayState = createGatewayState();
+  const tmpAllowed = fs.mkdtempSync(path.join(os.tmpdir(), 'ramcp-tools-'));
+  state.cfg = {
+    host: '127.0.0.1', port: 0, public_host: '', mcp_path: '/mcp', log_level: 'silent',
+    audit: { enabled: false, db_path: '/dev/null' },
+    read_only: false,
+    tokens: [{
+      id: 't1', name: 'default', token: TEST_TOKEN, created: new Date().toISOString(),
+      scopes: [], shell_enabled: false, allowed_paths: [], denied_paths: [],
+    }],
+  };
+  state.audit = null;
+  const { app } = buildApp(state);
   server = http.createServer(app);
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
   baseUrl = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
@@ -18,8 +34,6 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await new Promise<void>((r) => server.close(() => r()));
-  delete process.env.RAMCP_TOKEN;
-  delete process.env.RAMCP_SHELL;
 });
 
 let rpcId = 0;
