@@ -90,6 +90,36 @@ function packageScript(packageName: string, relativeEntry: string): string {
     return new URL(`../../node_modules/${packageName}/${relativeEntry}`, import.meta.url).pathname;
 }
 
+export interface CodebaseMemoryRuntimePaths {
+    root: string;
+    home: string;
+    cache: string;
+    data: string;
+    runtime: string;
+    binDir: string;
+    bin: string;
+    workspace: string;
+}
+
+/**
+ * Resolve the complete private filesystem layout for this gateway's
+ * Codebase Memory instance. These paths intentionally never fall back to the
+ * service user's normal HOME/XDG directories.
+ */
+export function resolveCodebaseMemoryRuntimePaths(env: NodeJS.ProcessEnv = process.env): CodebaseMemoryRuntimePaths {
+    const root = env.RAMCP_CODEBASE_RUNTIME || '/var/lib/remote-access-mcp/codebase-memory';
+    return {
+        root,
+        home: env.RAMCP_CODEBASE_HOME || path.join(root, 'home'),
+        cache: env.RAMCP_CODEBASE_CACHE || path.join(root, 'cache'),
+        data: env.RAMCP_CODEBASE_DATA || path.join(root, 'data'),
+        runtime: path.join(root, 'runtime'),
+        binDir: path.join(root, 'bin'),
+        bin: path.join(root, 'bin', 'codebase-memory-mcp'),
+        workspace: env.RAMCP_CODEBASE_WORKSPACE || path.join(root, 'workspace'),
+    };
+}
+
 class IntegrationManager {
     private readonly clients = new Map<IntegrationName, Promise<IntegrationClient>>();
 
@@ -116,62 +146,57 @@ class IntegrationManager {
                 // Codebase Memory gets a private runtime owned by Remote Access MCP.
                 // Never inherit the service user's normal HOME/cache/config: other
                 // agents on the host may have their own Codebase Memory instances.
-                const runtimeRoot = process.env.RAMCP_CODEBASE_RUNTIME || '/var/lib/remote-access-mcp/codebase-memory';
-                const runtimeHome = process.env.RAMCP_CODEBASE_HOME || path.join(runtimeRoot, 'home');
-                const runtimeCache = process.env.RAMCP_CODEBASE_CACHE || path.join(runtimeRoot, 'cache');
-                const runtimeData = process.env.RAMCP_CODEBASE_DATA || path.join(runtimeRoot, 'data');
-                const runtimeBinDir = path.join(runtimeRoot, 'bin');
-                const runtimeBin = path.join(runtimeBinDir, 'codebase-memory-mcp');
+                const paths = resolveCodebaseMemoryRuntimePaths(process.env);
                 const sourceBin = packageScript('codebase-memory-mcp', 'bin/codebase-memory-mcp');
-                fs.mkdirSync(runtimeHome, { recursive: true, mode: 0o750 });
-                fs.mkdirSync(runtimeCache, { recursive: true, mode: 0o750 });
-                fs.mkdirSync(runtimeData, { recursive: true, mode: 0o750 });
-                fs.mkdirSync(runtimeBinDir, { recursive: true, mode: 0o750 });
+                fs.mkdirSync(paths.home, { recursive: true, mode: 0o750 });
+                fs.mkdirSync(paths.cache, { recursive: true, mode: 0o750 });
+                fs.mkdirSync(paths.data, { recursive: true, mode: 0o750 });
+                fs.mkdirSync(paths.binDir, { recursive: true, mode: 0o750 });
                 const sourceStat = fs.statSync(sourceBin);
                 let needsRefresh = true;
                 try {
-                    const runtimeStat = fs.statSync(runtimeBin);
+                    const runtimeStat = fs.statSync(paths.bin);
                     needsRefresh = runtimeStat.size !== sourceStat.size || runtimeStat.mtimeMs !== sourceStat.mtimeMs;
                 } catch {
                     needsRefresh = true;
                 }
                 if (needsRefresh) {
-                    const staged = `${runtimeBin}.new`;
+                    const staged = `${paths.bin}.new`;
                     fs.copyFileSync(sourceBin, staged);
                     fs.chmodSync(staged, 0o750);
-                    fs.renameSync(staged, runtimeBin);
+                    fs.renameSync(staged, paths.bin);
                 }
-                fs.chmodSync(runtimeBin, 0o750);
+                fs.chmodSync(paths.bin, 0o750);
                 try {
-                    fs.chownSync(runtimeHome, 995, 987);
-                    fs.chownSync(runtimeCache, 995, 987);
-                    fs.chownSync(runtimeData, 995, 987);
-                    fs.chownSync(runtimeBinDir, 995, 987);
-                    fs.chownSync(runtimeBin, 995, 987);
+                    fs.chownSync(paths.home, 995, 987);
+                    fs.chownSync(paths.cache, 995, 987);
+                    fs.chownSync(paths.data, 995, 987);
+                    fs.chownSync(paths.binDir, 995, 987);
+                    fs.chownSync(paths.bin, 995, 987);
                 } catch {
                     // Non-root local development can still use the isolated runtime.
                 }
                 const isolatedEnv = {
                     ...env,
-                    HOME: runtimeHome,
-                    XDG_CACHE_HOME: runtimeCache,
-                    XDG_DATA_HOME: runtimeData,
-                    CODEBASE_MEMORY_HOME: runtimeHome,
-                    CBM_CACHE_DIR: runtimeCache,
-                    CBM_RUNTIME_DIR: path.join(runtimeRoot, 'runtime'),
-                    CBM_ALLOWED_ROOT: process.env.RAMCP_CODEBASE_WORKSPACE || path.join(runtimeRoot, 'workspace'),
+                    HOME: paths.home,
+                    XDG_CACHE_HOME: paths.cache,
+                    XDG_DATA_HOME: paths.data,
+                    CODEBASE_MEMORY_HOME: paths.home,
+                    CBM_CACHE_DIR: paths.cache,
+                    CBM_RUNTIME_DIR: paths.runtime,
+                    CBM_ALLOWED_ROOT: paths.workspace,
                     CBM_MEM_BUDGET_MB: process.env.RAMCP_CODEBASE_MEM_BUDGET_MB || '512',
                     CBM_WORKERS: process.env.RAMCP_CODEBASE_WORKERS || '1',
                     CBM_LOG_LEVEL: process.env.RAMCP_CODEBASE_LOG_LEVEL || 'warn',
                 };
-                fs.mkdirSync(isolatedEnv.CBM_RUNTIME_DIR, { recursive: true, mode: 0o750 });
-                fs.mkdirSync(isolatedEnv.CBM_ALLOWED_ROOT, { recursive: true, mode: 0o750 });
-                try { fs.chownSync(isolatedEnv.CBM_ALLOWED_ROOT, 995, 987); } catch { /* non-root */ }
-                try { fs.chownSync(isolatedEnv.CBM_RUNTIME_DIR, 995, 987); } catch { /* non-root */ }
+                fs.mkdirSync(paths.runtime, { recursive: true, mode: 0o750 });
+                fs.mkdirSync(paths.workspace, { recursive: true, mode: 0o750 });
+                try { fs.chownSync(paths.workspace, 995, 987); } catch { /* non-root */ }
+                try { fs.chownSync(paths.runtime, 995, 987); } catch { /* non-root */ }
                 return {
                     command: '/usr/sbin/runuser',
-                    args: ['-u', 'remote-access-mcp', '--', runtimeBin],
-                    cwd: isolatedEnv.CBM_ALLOWED_ROOT,
+                    args: ['-u', 'remote-access-mcp', '--', paths.bin],
+                    cwd: paths.workspace,
                     env: isolatedEnv,
                 };
             })();

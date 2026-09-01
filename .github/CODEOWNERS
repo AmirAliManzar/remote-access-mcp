@@ -1,0 +1,9 @@
+# Default owner for repository changes
+* @AmirAliManzar
+
+# Security-sensitive code and policy
+/src/core/ @AmirAliManzar
+/src/server/ @AmirAliManzar
+/src/tools/ @AmirAliManzar
+/SECURITY.md @AmirAliManzar
+/.github/workflows/ @AmirAliManzar

@@ -4,7 +4,7 @@
 [![CI](https://github.com/AmirAliManzar/remote-access-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/AmirAliManzar/remote-access-mcp/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Turn any Linux server into an AI-agent-accessible machine via the [Model Context Protocol](https://modelcontextprotocol.io) (MCP).
+Turn any machine into a secure AI-agent-accessible endpoint via the [Model Context Protocol](https://modelcontextprotocol.io) (MCP).
 
 ChatGPT (Developer Mode), Claude, Grok, and any MCP-compatible client connect over HTTPS and securely control your server: read/write files, run shell commands, manage services, query databases, audit everything — all behind per-token permissions.
 
@@ -23,7 +23,9 @@ The server binds to `127.0.0.1` only. You put it behind nginx (with Cloudflare o
 
 ## Install
 
-### Any machine with Node 18+ — Linux, macOS, or Windows
+### Any machine with Node.js 18+ — Linux, macOS, or Windows
+
+The core gateway supports Node.js 18 and newer. Optional MCP integrations may have higher runtime requirements; on Node.js 18 they are skipped when their packages cannot run, while the core gateway remains available.
 
 ```bash
 npm install -g remote-access-mcp
@@ -88,6 +90,13 @@ launchd on macOS, systemd on Linux for the autostart service.
 | `ramcp service install` | systemd unit (+ nginx vhost with `--domain`). |
 | `ramcp service logs -f` | Tail gateway logs. |
 | `ramcp schedule list` | List scheduled tasks. |
+| `ramcp webhook add --url URL --events EVENTS` | Add a webhook subscription. |
+| `ramcp webhook list` | List configured webhooks. |
+| `ramcp webhook on URL` / `off URL` | Enable or disable a webhook. |
+| `ramcp webhook remove URL` | Remove a webhook. |
+| `ramcp config export --out FILE` | Export configuration and credentials for backup. |
+| `ramcp config import FILE [--merge]` | Restore or merge a configuration backup. |
+| `ramcp tunnel` | Start a temporary public tunnel. |
 
 ### `token add` options
 
@@ -122,7 +131,9 @@ Get it ready-made: `ramcp url`
 
 Endpoint `https://your-domain.com/mcp` + header `Authorization: Bearer <token>`
 
-## Tools (44 across 17 suites)
+## Tools (45 built-in tools across 16 suites)
+
+The built-in tool count is stable. Optional MCP integrations can add additional namespaced tools when their upstream packages are available.
 
 **Filesystem** (7) `list_directory` `read_file` (offset/limit) `write_file` `edit_file` `delete_path` `search_code` `file_info`
 
@@ -152,6 +163,8 @@ Endpoint `https://your-domain.com/mcp` + header `Authorization: Bearer <token>`
 
 **Policy** (4) `list_allowed_paths` `allow_path` `deny_path` `shell_enabled` — each token manages only its own sandbox
 
+**Operations** (2) `environment_inspect` `nginx_inspect`
+
 ## Webhooks
 
 Get notified when tools run (or fail) — incident bots, Slack relays, anything that accepts a POST:
@@ -170,6 +183,8 @@ ramcp config export --out backup.json     # full snapshot, 0600 perms — contai
 ramcp config import backup.json           # replace
 ramcp config import backup.json --merge   # union: keeps local identity, adds new tokens/hosts/hooks
 ```
+
+> ⚠️ **Security warning:** configuration exports contain active authentication tokens. Treat backup files as secrets: never commit them to Git, upload them to issue trackers, or share them publicly. Store them with restricted permissions and rotate tokens if a backup is exposed.
 
 ## Security model
 
@@ -204,7 +219,7 @@ cd remote-access-mcp
 npm ci && npm run build && npm test
 ```
 
-107 tests: policy engine, auth matrix, transport compatibility (stateful, stateless, legacy SSE), cross-platform layer, tunnel wiring, webhooks, config backup, CLI lifecycle, crash regressions. CI runs on Node 18/20/22.
+The test suite covers policy enforcement, authentication, transport compatibility (stateful, stateless, legacy SSE), cross-platform behavior, tunnel wiring, webhooks, configuration backup, CLI lifecycle, and crash regressions. CI runs on Node.js 18, 20, and 22.
 
 ## License
 
@@ -212,14 +227,14 @@ MIT — see [LICENSE](LICENSE).
 
 ---
 
-📚 [README فارسی](README.fa.md) | [Roadmap](ROADMAP.md)
+📚 [README فارسی](README.fa.md) | [Roadmap](ROADMAP.md) | [Security Policy](SECURITY.md) | [Changelog](CHANGELOG.md) | [Contributing](CONTRIBUTING.md)
 
 ## Optional MCP integrations
 
-Remote Access MCP 2.3 adds a small integration layer for developer-context MCPs:
+Remote Access MCP can expose selected developer-context MCPs as namespaced tools:
 
 - **Context7** — proxied into the gateway as namespaced tools such as `context7_resolve-library-id` and `context7_query-docs`. The MIT-licensed `@upstash/context7-mcp` package is bundled as a normal dependency. A `CONTEXT7_API_KEY` environment variable can be supplied for higher limits/private repositories.
-- **Codebase Memory** — the MIT-licensed `codebase-memory-mcp` package is integrated as namespaced `codebase_memory_*` tools when `RAMCP_ENABLE_CODEBASE_MEMORY=1` is set. It is opt-in because Codebase Memory uses a per-account native daemon/cache and should not be multiplexed blindly with unrelated Codebase Memory sessions. Set `RAMCP_CODEBASE_ROOT` to the repository that this gateway instance should expose; `index_repository` is additionally restricted by Remote Access MCP to that root.
+- **Codebase Memory** — the MIT-licensed `codebase-memory-mcp` package is integrated as namespaced `codebase_memory_*` tools when its optional package is available. Set `RAMCP_ENABLE_CODEBASE_MEMORY=0` to disable it. Each Remote Access MCP instance uses a dedicated Codebase Memory runtime, home, cache, data directory, runtime directory, and service identity; it never reuses another service's Codebase Memory state. Set `RAMCP_CODEBASE_ROOT` to the repository this gateway instance should expose; `index_repository` is additionally restricted to that root.
 - **Context Mode** — shipped as an optional local dependency only. It is a client/plugin-side context optimization layer and is **not proxied as a hosted service** because its Elastic License 2.0 prohibits providing the software as a hosted or managed service.
 
 Integrations are loaded before the MCP transport connects, so the initial `tools/list` includes them when the upstream MCP is available. If an optional integration cannot start, the core Remote Access MCP remains available and the integration is omitted with a diagnostic message.

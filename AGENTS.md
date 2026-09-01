@@ -8,7 +8,7 @@ Windsurf, etc.) working in this repository. Read it fully before touching code.
 | File | What it covers |
 |---|---|
 | [`docs/ai/architecture.md`](docs/ai/architecture.md) | Module map, request lifecycle, data flow |
-| [`docs/ai/tools-and-cli.md`](docs/ai/tools-and-cli.md) | Every tool (44) and CLI command, with schemas and policy gates |
+| [`docs/ai/tools-and-cli.md`](docs/ai/tools-and-cli.md) | Every built-in tool (45) and CLI command, with schemas and policy gates |
 | [`docs/ai/security-model.md`](docs/ai/security-model.md) | Auth, policy engine, guards, audit chain — read before security-adjacent changes |
 | [`docs/ai/transport-compatibility.md`](docs/ai/transport-compatibility.md) | The three MCP dialects we serve and why (hard-won lessons) |
 | [`docs/ai/decisions.md`](docs/ai/decisions.md) | Architecture Decision Records, including the fleet removal |
@@ -52,12 +52,13 @@ the machine: fs, shell, systemd, journalctl, apt/npm, git, sqlite …
 
 1. **TypeScript strict, ESM-only, zero `require()`** in `src/` — a `require()`
    slipped past vitest once and crash-looped production for a day (ADR-004).
-2. **No native dependencies** in the runtime path. better-sqlite3 caused
-   SIGABRT in the stateless loop; the audit log is plain JSONL now (ADR-005).
+2. **Keep native dependencies isolated.** The audit log is plain JSONL and
+   does not depend on native bindings (ADR-005). The optional `sqlite_*` tools
+   use `better-sqlite3` only when SQLite functionality is invoked.
 3. **Tests must be hermetic** — build gateway state explicitly; never read the
    host's real config. A test suite that leaks production config will fail
    whenever the service is running (ADR-006).
-4. **Run `npm test` (107 tests) before any publish.** CI runs Node 18/20/22.
+4. **Run `npm test` before any publish.** CI runs Node 18/20/22; the exact test count may change as regression coverage grows.
 5. **Schema parameters must never be conditionally omitted** — the SDK
    silently drops client args that aren't in the schema, which once turned a
    "remote" command into a local execution (ADR-008).

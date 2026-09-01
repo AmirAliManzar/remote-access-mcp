@@ -1,3 +1,4 @@
+import '../core/webcrypto.js';
 import express, { type Request, type Response, type NextFunction } from 'express';
 import fs from 'node:fs';
 import os from 'node:os';

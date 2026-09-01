@@ -1,7 +1,7 @@
 # Tools & CLI Reference
 
-Complete inventory of what the gateway exposes, as of v3.0.0.
-Counts: **44 tools / 17 suites**, **17 CLI commands**.
+Complete inventory of what the gateway exposes, as of v3.0.2.
+Counts: **45 built-in tools / 16 suites**. Optional MCP integrations may add additional namespaced tools. CLI commands are documented by group below.
 
 Every tool handler runs inside the audit wrapper (app.ts): execution is
 timed, arguments redacted, outcome appended to the hash chain, webhooks

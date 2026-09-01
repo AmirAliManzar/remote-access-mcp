@@ -1,7 +1,7 @@
 {
   "name": "remote-access-mcp",
-  "version": "3.0.1",
-  "description": "Turn any Linux server into an AI-agent-accessible machine via MCP. ChatGPT, Claude, and Grok connect over HTTPS and control files, shell, git, and more — securely and with zero Python dependencies.",
+  "version": "3.0.2",
+  "description": "Turn any machine into a secure AI-agent-accessible endpoint via MCP. Connect ChatGPT, Claude, Grok, and other MCP clients to files, shell, git, services, and more.",
   "type": "module",
   "bin": {
     "remote-access-mcp": "dist/cli.js",
@@ -14,10 +14,13 @@
     "LICENSE",
     "install.sh",
     "AGENTS.md",
+    "SECURITY.md",
+    "CHANGELOG.md",
+    "CONTRIBUTING.md",
     "docs/ai"
   ],
   "engines": {
-    "node": ">=20.18.1"
+    "node": ">=18"
   },
   "scripts": {
     "build": "tsc",
@@ -30,14 +33,18 @@
   },
   "keywords": [
     "mcp",
+    "mcp-server",
+    "mcp-gateway",
     "model-context-protocol",
-    "ai",
-    "agent",
+    "ai-agent",
+    "ai-ops",
     "remote-access",
     "server-management",
+    "infrastructure",
+    "devops",
+    "linux",
     "chatgpt",
-    "claude",
-    "devops"
+    "claude"
   ],
   "author": "Amir Ali Manzar (https://amiralimanzar.ir)",
   "license": "MIT",
@@ -51,13 +58,13 @@
   "homepage": "https://github.com/AmirAliManzar/remote-access-mcp#readme",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.20.0",
-    "@upstash/context7-mcp": "^4.0.4",
     "better-sqlite3": "^11.6.0",
-    "codebase-memory-mcp": "^0.10.8",
     "express": "^4.21.0",
     "zod": "^3.24.0"
   },
   "optionalDependencies": {
+    "@upstash/context7-mcp": "^4.0.4",
+    "codebase-memory-mcp": "^0.10.8",
     "context-mode": "^1.0.169"
   },
   "devDependencies": {
