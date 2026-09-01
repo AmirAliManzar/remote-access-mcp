@@ -163,3 +163,22 @@ describe('fleet respects token shell flag', () => {
     expect(sshCalls()).toHaveLength(0);
   });
 });
+
+/**
+ * Regression (security): when a client passes host=X but the gateway has NO
+ * fleet configured, the arg is not in the advertised schema — the SDK may
+ * silently drop it and run the command LOCALLY on the gateway. That silently
+ * executes a "remote" command on the machine that was supposed to stay
+ * untouched. The empty-fleet guard must turn this into an explicit error.
+ */
+describe('empty-fleet guard', () => {
+  it('run_command with host= on a fleet-less gateway refuses instead of running locally', async () => {
+    const savedFleet = state.cfg.fleet;
+    state.cfg.fleet = { hosts: [] };
+    const r = await call('run_command', { command: 'echo should-not-run', host: 'ghost' });
+    state.cfg.fleet = savedFleet;
+    expect(r.isError).toBe(true);
+    expect(r.content[0].text).toContain('No fleet hosts are configured');
+    expect(sshCalls()).toHaveLength(0);
+  });
+});

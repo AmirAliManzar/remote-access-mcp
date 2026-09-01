@@ -14,12 +14,22 @@ function fleetHosts(ctx: ToolContext): FleetHost[] {
   return ctx.cfg.fleet?.hosts || [];
 }
 
-/** Shared optional host param, advertised only when a fleet is configured. */
-export function hostParam(ctx: ToolContext, names?: string): { host?: any } {
+/**
+ * Shared optional host parameter — ALWAYS present in the schema.
+ *
+ * If it were only advertised when a fleet exists, the SDK would silently
+ * strip a client's host=<x> argument on a fleet-less gateway and the tool
+ * would run the "remote" command LOCALLY on the gateway itself — a silent
+ * security downgrade. Keeping the parameter in every schema means the
+ * handler always sees it and can refuse with a clear error instead.
+ */
+export function hostParam(ctx: ToolContext, names?: string): { host: any } {
   const hosts = fleetHosts(ctx);
-  if (!hosts.length) return {};
+  const hint = hosts.length
+    ? `Run on fleet machine${names ? ` (${names})` : ''}: ${hosts.map(h => h.name).join(', ')}. Omit for local.`
+    : 'Reserved for fleet hosts — none configured yet (see `ramcp fleet add`). Ignored locally.';
   return {
-    host: z.string().optional().describe(`Run on fleet machine${names ? ` (${names})` : ''}: ${hosts.map(h => h.name).join(', ')}. Omit for local.`),
+    host: z.string().optional().describe(hint),
   };
 }
 
@@ -50,6 +60,12 @@ export function registerShellTools(server: McpServer, ctx: ToolContext): void {
 
       // Fleet path: per-host allowlist + SSH, no local policy check (the
       // command does not touch this machine).
+      // If the client names a host but the schema had no fleet to advertise
+      // (empty config), the SDK still may pass the arg through — a silent
+      // LOCAL fallback would run a "remote" command on the gateway itself.
+      if (host && !fleetHosts(ctx).length) {
+        return { content: [{ type: 'text', text: 'No fleet hosts are configured on this gateway. Add one with `ramcp fleet add` before using host parameters.' }], isError: true };
+      }
       if (host) {
         const h = (await import('../core/fleet.js')).assertCapability(fleetHosts(ctx), host, 'shell');
         const { stdout } = await sshRun(h.host, h.port, buildRunCommand(command, undefined, timeout_ms), { timeoutMs: Math.min(timeout_ms, 600_000) });

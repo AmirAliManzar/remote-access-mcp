@@ -30,6 +30,9 @@ export function registerLogTools(server: McpServer, ctx: ToolContext): void {
       },
     },
     async ({ path: file, lines, host }) => {
+      if (host && !fleetHostsOf(ctx).length) {
+        return { content: [{ type: 'text', text: 'No fleet hosts are configured on this gateway. Add one with `ramcp fleet add` before using host parameters.' }], isError: true };
+      }
       if (host) {
         const h = assertCapability(fleetHostsOf(ctx), host, 'logs');
         const { stdout } = await sshRun(h.host, h.port, buildTailCommand(file, lines));
@@ -62,6 +65,9 @@ export function registerLogTools(server: McpServer, ctx: ToolContext): void {
       },
     },
     async ({ path: file, pattern, context, max_results, host }) => {
+      if (host && !fleetHostsOf(ctx).length) {
+        return { content: [{ type: 'text', text: 'No fleet hosts are configured on this gateway. Add one with `ramcp fleet add` before using host parameters.' }], isError: true };
+      }
       if (host) {
         const h = assertCapability(fleetHostsOf(ctx), host, 'logs');
         const { stdout } = await sshRun(h.host, h.port, buildSearchCommand(file, pattern, max_results), { timeoutMs: 180_000 });
@@ -93,6 +99,9 @@ export function registerLogTools(server: McpServer, ctx: ToolContext): void {
       },
     },
     async ({ unit, lines, host }) => {
+      if (host && !fleetHostsOf(ctx).length) {
+        return { content: [{ type: 'text', text: 'No fleet hosts are configured on this gateway. Add one with `ramcp fleet add` before using host parameters.' }], isError: true };
+      }
       if (host) {
         const h = assertCapability(fleetHostsOf(ctx), host, 'logs');
         const { stdout } = await sshRun(h.host, h.port, buildJournalCommand(unit, lines));

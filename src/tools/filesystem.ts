@@ -29,6 +29,9 @@ export function registerFilesystemTools(server: McpServer, ctx: ToolContext): vo
       inputSchema: { path: z.string().describe('Directory path'), ...hostParam(ctx) },
     },
     async ({ path: dir, host }) => {
+      if (host && !fleetHostsOf(ctx).length) {
+        return { content: [{ type: 'text', text: 'No fleet hosts are configured on this gateway. Add one with `ramcp fleet add` before using host parameters.' }], isError: true };
+      }
       if (host) {
         const h = assertCapability(fleetHostsOf(ctx), host, 'fs');
         const { stdout } = await sshRun(h.host, h.port, buildListCommand(dir));
@@ -55,6 +58,9 @@ export function registerFilesystemTools(server: McpServer, ctx: ToolContext): vo
       },
     },
     async ({ path: file, offset, limit, host }) => {
+      if (host && !fleetHostsOf(ctx).length) {
+        return { content: [{ type: 'text', text: 'No fleet hosts are configured on this gateway. Add one with `ramcp fleet add` before using host parameters.' }], isError: true };
+      }
       if (host) {
         const h = assertCapability(fleetHostsOf(ctx), host, 'fs');
         const { stdout } = await sshRun(h.host, h.port, buildReadCommand(file));
@@ -89,6 +95,9 @@ export function registerFilesystemTools(server: McpServer, ctx: ToolContext): vo
       },
     },
     async ({ path: file, content, mkdir, host }) => {
+      if (host && !fleetHostsOf(ctx).length) {
+        return { content: [{ type: 'text', text: 'No fleet hosts are configured on this gateway. Add one with `ramcp fleet add` before using host parameters.' }], isError: true };
+      }
       if (host) {
         const h = assertCapability(fleetHostsOf(ctx), host, 'fs');
         const b64 = Buffer.from(content, 'utf8').toString('base64');
@@ -130,6 +139,9 @@ export function registerFilesystemTools(server: McpServer, ctx: ToolContext): vo
       inputSchema: { path: z.string().describe('Path to delete'), ...hostParam(ctx) },
     },
     async ({ path: target, host }) => {
+      if (host && !fleetHostsOf(ctx).length) {
+        return { content: [{ type: 'text', text: 'No fleet hosts are configured on this gateway. Add one with `ramcp fleet add` before using host parameters.' }], isError: true };
+      }
       if (host) {
         const h = assertCapability(fleetHostsOf(ctx), host, 'fs');
         await sshRun(h.host, h.port, buildDeleteCommand(target));
@@ -158,6 +170,9 @@ export function registerFilesystemTools(server: McpServer, ctx: ToolContext): vo
       },
     },
     async ({ path: dir, pattern, include, max_results, host }) => {
+      if (host && !fleetHostsOf(ctx).length) {
+        return { content: [{ type: 'text', text: 'No fleet hosts are configured on this gateway. Add one with `ramcp fleet add` before using host parameters.' }], isError: true };
+      }
       if (host) {
         const h = assertCapability(fleetHostsOf(ctx), host, 'fs');
         const cmd = buildSearchCommand(dir, pattern, max_results) + (include ? ` | grep ${include}` : '');
@@ -199,6 +214,9 @@ export function registerFilesystemTools(server: McpServer, ctx: ToolContext): vo
       inputSchema: { path: z.string().describe('Path'), ...hostParam(ctx) },
     },
     async ({ path: target, host }) => {
+      if (host && !fleetHostsOf(ctx).length) {
+        return { content: [{ type: 'text', text: 'No fleet hosts are configured on this gateway. Add one with `ramcp fleet add` before using host parameters.' }], isError: true };
+      }
       if (host) {
         const h = assertCapability(fleetHostsOf(ctx), host, 'fs');
         const { stdout } = await sshRun(h.host, h.port, buildFileInfoCommand(target));

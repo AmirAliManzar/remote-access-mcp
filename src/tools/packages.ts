@@ -35,6 +35,9 @@ export function registerPackageTools(server: McpServer, ctx: ToolContext): void 
       },
     },
     async ({ filter, limit, host }) => {
+      if (host && !fleetHostsOf(ctx).length) {
+        return { content: [{ type: 'text', text: 'No fleet hosts are configured on this gateway. Add one with `ramcp fleet add` before using host parameters.' }], isError: true };
+      }
       if (host) {
         const h = assertCapability(fleetHostsOf(ctx), host, 'packages');
         const { stdout } = await sshRun(h.host, h.port, buildPackageListCommand(filter));

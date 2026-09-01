@@ -31,6 +31,9 @@ export function registerServiceTools(server: McpServer, ctx: ToolContext): void 
       inputSchema: { unit: z.string().regex(/^[A-Za-z0-9@._\-]+$/), ...hostParam(ctx) },
     },
     async ({ unit, host }) => {
+      if (host && !fleetHostsOf(ctx).length) {
+        return { content: [{ type: 'text', text: 'No fleet hosts are configured on this gateway. Add one with `ramcp fleet add` before using host parameters.' }], isError: true };
+      }
       if (host) {
         const h = assertCapability(fleetHostsOf(ctx), host, 'services');
         const { stdout } = await sshRun(h.host, h.port, buildServiceStatusCommand(unit));
@@ -71,6 +74,9 @@ export function registerServiceTools(server: McpServer, ctx: ToolContext): void 
       },
     },
     async ({ unit, action, host }) => {
+      if (host && !fleetHostsOf(ctx).length) {
+        return { content: [{ type: 'text', text: 'No fleet hosts are configured on this gateway. Add one with `ramcp fleet add` before using host parameters.' }], isError: true };
+      }
       if (host) {
         const h = assertCapability(fleetHostsOf(ctx), host, 'services');
         if (PROTECTED_UNITS.test(unit)) {

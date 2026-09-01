@@ -110,12 +110,28 @@ class IntegrationManager {
                 args: [packageScript('@upstash/context7-mcp', 'dist/index.js')],
                 env,
             }
-            : {
-                command: process.execPath,
-                args: [packageScript('codebase-memory-mcp', 'bin.js')],
-                cwd: process.env.RAMCP_CODEBASE_ROOT || process.cwd(),
-                env,
-            };
+            : (() => {
+                // Codebase Memory gets a private runtime owned by Remote Access MCP.
+                // Never inherit the service user's normal HOME/cache/config: other
+                // agents on the host may have their own Codebase Memory instances.
+                const runtimeRoot = process.env.RAMCP_CODEBASE_RUNTIME || '/var/lib/remote-access-mcp/codebase-memory';
+                const runtimeHome = process.env.RAMCP_CODEBASE_HOME || path.join(runtimeRoot, 'home');
+                const runtimeCache = process.env.RAMCP_CODEBASE_CACHE || path.join(runtimeRoot, 'cache');
+                const runtimeData = process.env.RAMCP_CODEBASE_DATA || path.join(runtimeRoot, 'data');
+                const isolatedEnv = {
+                    ...env,
+                    HOME: runtimeHome,
+                    XDG_CACHE_HOME: runtimeCache,
+                    XDG_DATA_HOME: runtimeData,
+                    CODEBASE_MEMORY_HOME: runtimeHome,
+                };
+                return {
+                    command: process.execPath,
+                    args: [packageScript('codebase-memory-mcp', 'bin.js')],
+                    cwd: process.env.RAMCP_CODEBASE_ROOT || process.cwd(),
+                    env: isolatedEnv,
+                };
+            })();
 
         const transport = new StdioClientTransport(config);
         const client = new Client({ name: 'remote-access-mcp', version: 'integration' });
