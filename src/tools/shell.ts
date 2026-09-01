@@ -5,33 +5,9 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { assertToolPermitted } from '../core/policy.js';
 import { shellCommand, childEnv, isWindows } from '../core/platform.js';
 import type { ToolContext } from '../core/context.js';
-import { sshRun, buildRunCommand, type FleetHost } from '../core/fleet.js';
 
 const exec = promisify(execFile);
 const MAX_OUTPUT = 60_000;
-
-function fleetHosts(ctx: ToolContext): FleetHost[] {
-  return ctx.cfg.fleet?.hosts || [];
-}
-
-/**
- * Shared optional host parameter — ALWAYS present in the schema.
- *
- * If it were only advertised when a fleet exists, the SDK would silently
- * strip a client's host=<x> argument on a fleet-less gateway and the tool
- * would run the "remote" command LOCALLY on the gateway itself — a silent
- * security downgrade. Keeping the parameter in every schema means the
- * handler always sees it and can refuse with a clear error instead.
- */
-export function hostParam(ctx: ToolContext, names?: string): { host: any } {
-  const hosts = fleetHosts(ctx);
-  const hint = hosts.length
-    ? `Run on fleet machine${names ? ` (${names})` : ''}: ${hosts.map(h => h.name).join(', ')}. Omit for local.`
-    : 'Reserved for fleet hosts — none configured yet (see `ramcp fleet add`). Ignored locally.';
-  return {
-    host: z.string().optional().describe(hint),
-  };
-}
 
 // Shell injection surface: we run a shell by design (the tool IS a shell).
 // Guard rails: timeout, output cap, no TTY, cwd policy-checked.
@@ -45,33 +21,17 @@ export function registerShellTools(server: McpServer, ctx: ToolContext): void {
   // ---- run_command -------------------------------------------------------
   server.registerTool('run_command',
     {
-      description: 'Execute a shell command (bash/sh on POSIX, PowerShell/cmd on Windows; sh on fleet hosts). Requires shell enabled. 120s default timeout.',
+      description: 'Execute a shell command (bash/sh on POSIX, PowerShell/cmd on Windows). Requires shell enabled. 120s default timeout.',
       inputSchema: {
         command: z.string().describe('Command line to run'),
         cwd: z.string().optional().describe('Working directory (policy-checked when local)'),
         timeout_ms: z.number().optional().default(120_000).describe('Timeout in ms (max 600000)'),
-        ...hostParam(ctx),
       },
     },
-    async ({ command, cwd, host, timeout_ms }) => {
+    async ({ command, cwd, timeout_ms }) => {
       if (!ctx.token.shell_enabled) {
         return { content: [{ type: 'text', text: 'Shell execution is disabled for this token. Enable with `ramcp policy shell on`.' }], isError: true };
       }
-
-      // Fleet path: per-host allowlist + SSH, no local policy check (the
-      // command does not touch this machine).
-      // If the client names a host but the schema had no fleet to advertise
-      // (empty config), the SDK still may pass the arg through — a silent
-      // LOCAL fallback would run a "remote" command on the gateway itself.
-      if (host && !fleetHosts(ctx).length) {
-        return { content: [{ type: 'text', text: 'No fleet hosts are configured on this gateway. Add one with `ramcp fleet add` before using host parameters.' }], isError: true };
-      }
-      if (host) {
-        const h = (await import('../core/fleet.js')).assertCapability(fleetHosts(ctx), host, 'shell');
-        const { stdout } = await sshRun(h.host, h.port, buildRunCommand(command, undefined, timeout_ms), { timeoutMs: Math.min(timeout_ms, 600_000) });
-        return { content: [{ type: 'text', text: (stdout || '(no output)').slice(0, MAX_OUTPUT) }] };
-      }
-
       assertToolPermitted({ tool: 'run_command', scopes: ctx.token.scopes, readOnly: ctx.readOnly, policy: policy(), target: cwd });
       const timeout = Math.min(timeout_ms, 600_000);
       const { file, args } = shellCommand(command);
@@ -101,17 +61,10 @@ export function registerShellTools(server: McpServer, ctx: ToolContext): void {
   // ---- process_list ---------------------------------------------------------
   server.registerTool('process_list',
     {
-      description: 'List running processes with CPU/memory. Local machine, or a fleet host with the shell group.',
-      inputSchema: {
-        ...hostParam(ctx),
-      },
+      description: 'List running processes with CPU/memory. Uses ps on POSIX, Get-Process on Windows.',
+      inputSchema: {},
     },
-    async ({ host }) => {
-      if (host) {
-        const h = (await import('../core/fleet.js')).assertCapability(fleetHosts(ctx), host, 'shell');
-        const { stdout } = await sshRun(h.host, h.port, "ps axo pid,ppid,user,pcpu,pmem,comm --sort=-pcpu | head -80", { timeoutMs: 30_000 });
-        return { content: [{ type: 'text', text: stdout.slice(0, MAX_OUTPUT) }] };
-      }
+    async () => {
       assertToolPermitted({ tool: 'process_list', scopes: ctx.token.scopes, readOnly: ctx.readOnly });
       try {
         if (isWindows()) {

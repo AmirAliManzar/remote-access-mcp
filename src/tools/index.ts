@@ -16,7 +16,6 @@ import { registerProjectTools } from './project.js';
 import { registerWebTools } from './web.js';
 import { registerPlanningTools } from './planning.js';
 import { registerOpsTools } from './ops.js';
-import { registerFleetTools } from './fleet.js';
 import { registerIntegrationTools } from './integrations.js';
 
 /**
@@ -40,7 +39,6 @@ export async function registerAllTools(server: McpServer, ctx: ToolContext): Pro
   registerWebTools(server, ctx);
   registerPlanningTools(server, ctx);
   registerOpsTools(server, ctx);
-  registerFleetTools(server, ctx);
 
   // Integration subprocesses are disabled in the unit-test environment so
   // core transport/auth tests stay deterministic. Production loads them

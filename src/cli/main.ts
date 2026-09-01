@@ -11,7 +11,6 @@ import {
 } from '../core/config.js';
 import { resolveReal, TOOL_SCOPES } from '../core/policy.js';
 import { AuditLog } from '../core/audit.js';
-import { fleetProbe, isFleetCapability, FLEET_CAPABILITIES, type FleetHost } from '../core/fleet.js';
 import { webhookStats } from '../core/webhooks.js';
 import {
   platform, isWindows, isMac, isLinux, hasSystemd, which, platformLabel,
@@ -66,11 +65,6 @@ Service (autostart):
 Other:
   schedule list [--json]
   scopes                        List available tool groups
-
-Fleet (remote machines over SSH):
-  fleet add --name N --host user@h --tools shell,fs [--port P] [--note T]
-  fleet list | remove N | edit N [--tools …] | test | status
-  (tools accept host: run_command, read_file, write_file, … → run remotely)
 
 Webhooks:
   webhook add --url https://… [--events tool.error,tool.success]
@@ -839,96 +833,6 @@ async function cmdUpgrade(args: Args): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// fleet — SSH remote machines
-// ---------------------------------------------------------------------------
-function cmdFleet(args: Args): void {
-  const cfg = loadConfig();
-  const sub = args.sub[0] || 'list';
-  const hosts = cfg.fleet!.hosts;
-
-  if (sub === 'add') {
-    const name = args.values.get('name') || args.sub[1];
-    const host = args.values.get('host');
-    if (!name || !host) { console.error('Usage: ramcp fleet add --name NAME --host user@hostname [--port N] --tools shell,fs [--note TEXT]'); process.exit(1); }
-    if (hosts.some(h => h.name === name)) { console.error(`Host "${name}" already exists (remove it first: ramcp fleet remove ${name})`); process.exit(1); }
-    const tools = splitList(args.values.get('tools'));
-    const bad = tools.filter(t => !isFleetCapability(t));
-    if (bad.length) { console.error(`Unknown tool group(s): ${bad.join(', ')}. Available: ${FLEET_CAPABILITIES.join(', ')}`); process.exit(1); }
-    if (!tools.length) { console.error('Refusing to add a host with no tools — grant at least one of: ' + FLEET_CAPABILITIES.join(', ')); process.exit(1); }
-    const rec: FleetHost = {
-      name, host,
-      port: args.values.has('port') ? parseInt(args.values.get('port')!, 10) : undefined,
-      tools, note: args.values.get('note'),
-      added: new Date().toISOString(),
-    };
-    hosts.push(rec);
-    saveConfig(cfg);
-    console.log(`✔ fleet host "${name}" added (${host}) with tools: ${tools.join(', ')}`);
-    const probe = fleetProbe(rec).then(r => {
-      console.log(r.ok ? `  SSH check: reachable` : `  SSH check: FAILED — ${r.detail}`);
-      console.log(r.ok ? `  (grant access from a chatbot with the fleet scope or all-tools tokens)` : `  (check: ssh keys loaded? BatchMode disables password prompts)`);
-    });
-    return;
-  }
-
-  if (sub === 'remove') {
-    const name = args.sub[1];
-    if (!name) { console.error('Usage: ramcp fleet remove NAME'); process.exit(1); }
-    const i = hosts.findIndex(h => h.name === name);
-    if (i === -1) { console.error(`No fleet host named "${name}".`); process.exit(1); }
-    hosts.splice(i, 1);
-    saveConfig(cfg);
-    console.log(`✔ removed ${name}`);
-    return;
-  }
-
-  if (sub === 'edit') {
-    const name = args.sub[1];
-    if (!name) { console.error('Usage: ramcp fleet edit NAME [--tools shell,fs] [--host user@h] [--note T]'); process.exit(1); }
-    const h = hosts.find(h => h.name === name);
-    if (!h) { console.error(`No fleet host named "${name}".`); process.exit(1); }
-    if (args.values.has('tools')) {
-      const tools = splitList(args.values.get('tools'));
-      const bad = tools.filter(t => !isFleetCapability(t));
-      if (bad.length) { console.error(`Unknown: ${bad.join(', ')}. Available: ${FLEET_CAPABILITIES.join(', ')}`); process.exit(1); }
-      h.tools = tools;
-    }
-    if (args.values.has('host')) h.host = args.values.get('host')!;
-    if (args.values.has('port')) h.port = parseInt(args.values.get('port')!, 10);
-    if (args.values.has('note')) h.note = args.values.get('note');
-    saveConfig(cfg);
-    console.log(`✔ ${name} updated. tools: ${h.tools.join(',') || '(none)'}`);
-    return;
-  }
-
-  if (sub === 'test') {
-    (async () => {
-      for (const h of hosts) {
-        const r = await fleetProbe(h);
-        console.log(`${r.ok ? '✔' : '✖'} ${h.name.padEnd(14)} ${h.host}${h.port ? ':' + h.port : ''} ${r.ok ? 'reachable' : 'unreachable — ' + r.detail}`);
-      }
-      if (!hosts.length) console.log('(no fleet hosts)');
-    })();
-    return;
-  }
-
-  if (sub === 'status') {
-    const { runtime } = { runtime: null };
-    for (const h of hosts) {
-      console.log(`${h.name.padEnd(14)} ${h.host}${h.port ? ':' + h.port : ''}  tools: ${h.tools.join(',')}${h.note ? '  — ' + h.note : ''}`);
-    }
-    if (!hosts.length) console.log('(no fleet hosts — add one with `ramcp fleet add`)');
-    return;
-  }
-
-  // list / default
-  for (const h of hosts) {
-    console.log(`${h.name.padEnd(14)} ${h.host}${h.port ? ':' + h.port : ''}  tools: ${h.tools.join(',')}${h.note ? '  — ' + h.note : ''}`);
-  }
-  if (!hosts.length) console.log('(no fleet hosts — add one with `ramcp fleet add --name NAME --host user@host --tools shell,fs`)');
-}
-
-// ---------------------------------------------------------------------------
 // webhook — outbound notifications
 // ---------------------------------------------------------------------------
 function cmdWebhook(args: Args): void {
@@ -988,7 +892,7 @@ function cmdConfig(args: Args): void {
     // strip nothing — export is a full backup by design; tokens are the
     // secrets that make the backup useful. Warn loudly instead.
     fs.writeFileSync(out, JSON.stringify(snapshot, null, 2), { mode: 0o600 });
-    console.log(`✔ exported ${cfg.tokens.length} token(s), ${(cfg.fleet?.hosts || []).length} fleet host(s), ${(cfg.webhooks || []).length} webhook(s) → ${out}`);
+    console.log(`✔ exported ${cfg.tokens.length} token(s), ${(cfg.webhooks || []).length} webhook(s) → ${out}`);
     console.log('⚠ this file contains live tokens — store it encrypted and delete when done.');
     return;
   }
@@ -1002,11 +906,9 @@ function cmdConfig(args: Args): void {
     if (!Array.isArray(incoming.tokens)) { console.error('not a ramcp export (no tokens array)'); process.exit(1); }
     if (args.flags.has('merge')) {
       // merge: keep local identity (host/port/domain/paths), union tokens,
-      // add fleet hosts and webhooks that are new.
+      // add webhooks that are new.
       const existingUrls = new Set((cfg.webhooks || []).map(w => w.url));
       for (const w of incoming.webhooks || []) if (!existingUrls.has(w.url)) cfg.webhooks!.push(w);
-      const existingHosts = new Set((cfg.fleet?.hosts || []).map(h => h.name));
-      for (const h of incoming.fleet?.hosts || []) if (!existingHosts.has(h.name)) cfg.fleet!.hosts.push(h);
       for (const t of incoming.tokens) if (!cfg.tokens.some(x => x.token === t.token)) cfg.tokens.push(t);
       saveConfig(cfg);
       console.log('✔ merged (local host/port/domain and existing entries preserved)');
@@ -1043,7 +945,6 @@ export async function main(argv: string[]): Promise<void> {
     case 'status': cmdStatus(); break;
     case 'schedule': cmdSchedule(args); break;
     case 'upgrade': await cmdUpgrade(args); break;
-    case 'fleet': cmdFleet(args); break;
     case 'webhook': cmdWebhook(args); break;
     case 'config': cmdConfig(args); break;
     case 'version': console.log(PKG.version); break;

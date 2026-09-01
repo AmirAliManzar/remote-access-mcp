@@ -30,49 +30,6 @@ function cfg(): any {
   return JSON.parse(fs.readFileSync(path.join(tmpHome, '.config', 'remote-access-mcp', 'config.json'), 'utf8'));
 }
 
-describe('cli: fleet', () => {
-  it('add validates tool groups', () => {
-    cli(['init']);
-    const bad = cli(['fleet', 'add', '--name', 'web1', '--host', 'root@1.2.3.4', '--tools', 'shell,bogus']);
-    expect(bad.code).toBe(1);
-    expect(bad.out).toContain('Unknown tool group');
-  });
-
-  it('refuses a host with zero tools', () => {
-    cli(['init']);
-    const r = cli(['fleet', 'add', '--name', 'web1', '--host', 'root@1.2.3.4']);
-    expect(r.code).toBe(1);
-    expect(r.out).toContain('no tools');
-  });
-
-  it('add/list/remove lifecycle persists', () => {
-    cli(['init']);
-    const add = cli(['fleet', 'add', '--name', 'web1', '--host', 'deploy@10.0.0.5', '--port', '2222', '--tools', 'shell,fs', '--note', 'app server']);
-    expect(add.code).toBe(0);
-    expect(cfg().fleet.hosts).toHaveLength(1);
-    const h = cfg().fleet.hosts[0];
-    expect(h.name).toBe('web1');
-    expect(h.host).toBe('deploy@10.0.0.5');
-    expect(h.port).toBe(2222);
-    expect(h.tools).toEqual(['shell', 'fs']);
-
-    const list = cli(['fleet', 'list']);
-    expect(list.out).toContain('web1');
-    expect(list.out).toContain('deploy@10.0.0.5');
-
-    cli(['fleet', 'remove', 'web1']);
-    expect(cfg().fleet.hosts).toHaveLength(0);
-  });
-
-  it('edit updates tools', () => {
-    cli(['init']);
-    cli(['fleet', 'add', '--name', 'db1', '--host', 'root@db', '--tools', 'fs']);
-    const edit = cli(['fleet', 'edit', 'db1', '--tools', 'fs,logs,services']);
-    expect(edit.code).toBe(0);
-    expect(cfg().fleet.hosts[0].tools).toEqual(['fs', 'logs', 'services']);
-  });
-});
-
 describe('cli: webhook', () => {
   it('add/list/off/on/remove lifecycle', () => {
     cli(['init']);
@@ -105,7 +62,6 @@ describe('cli: config export/import', () => {
     cli(['init']);
     cli(['policy', 'allow', '/tmp']);
     cli(['token', 'add', '--name', 'second', '--shell']);
-    cli(['fleet', 'add', '--name', 'web1', '--host', 'root@1.2.3.4', '--tools', 'shell']);
     cli(['webhook', 'add', '--url', 'https://hooks.example.com/x']);
 
     const exportFile = path.join(tmpHome, 'backup.json');
@@ -113,7 +69,7 @@ describe('cli: config export/import', () => {
     expect(exp.code).toBe(0);
     const snapshot = JSON.parse(fs.readFileSync(exportFile, 'utf8'));
     expect(snapshot.tokens).toHaveLength(2);
-    expect(snapshot.fleet.hosts).toHaveLength(1);
+    expect(snapshot.webhooks).toHaveLength(1);
     expect(fs.statSync(exportFile).mode & 0o777).toBe(0o600); // tight perms
 
     // wipe and restore
@@ -122,13 +78,11 @@ describe('cli: config export/import', () => {
     expect(imp.code).toBe(0);
     const restored = cfg();
     expect(restored.tokens).toHaveLength(2);
-    expect(restored.fleet.hosts[0].name).toBe('web1');
     expect(restored.tokens.some(t => t.name === 'second' && t.shell_enabled)).toBe(true);
   });
 
-  it('merge preserves local host/port/domain and existing tokens', () => {
+  it('merge preserves local host/port/domain and existing entries', () => {
     cli(['init']);
-    cli(['fleet', 'add', '--name', 'localbox', '--host', 'root@192.168.1.9', '--tools', 'fs']);
 
     // simulate an export from ANOTHER machine
     const foreign = {
@@ -136,8 +90,7 @@ describe('cli: config export/import', () => {
       mcp_path: '/mcp', log_level: 'info',
       audit: { enabled: true, db_path: '/x/audit.jsonl' }, read_only: false,
       tokens: [{ id: 'f1', name: 'foreign', token: 'foreign-token-xyz', created: '2026-01-01', scopes: [], shell_enabled: false, allowed_paths: [], denied_paths: [] }],
-      fleet: { hosts: [{ name: 'web9', host: 'root@5.5.5.5', tools: ['shell'], added: '2026-01-01' }] },
-      webhooks: [],
+      webhooks: [{ url: 'https://hooks.example.com/from-foreign', events: ['tool.error'], enabled: true }],
     };
     const f = path.join(tmpHome, 'foreign.json');
     fs.writeFileSync(f, JSON.stringify(foreign));
@@ -153,8 +106,17 @@ describe('cli: config export/import', () => {
     // both token sets present
     expect(after.tokens.some(t => t.name === 'default')).toBe(true);
     expect(after.tokens.some(t => t.name === 'foreign')).toBe(true);
-    // both fleet hosts present
-    expect(after.fleet.hosts.some(h => h.name === 'localbox')).toBe(true);
-    expect(after.fleet.hosts.some(h => h.name === 'web9')).toBe(true);
+    // webhooks unioned
+    expect(after.webhooks.some(w => w.url === 'https://hooks.example.com/from-foreign')).toBe(true);
+  });
+});
+
+/** The fleet command must be fully gone after v3.0 — not hidden, removed. */
+describe('cli: fleet is removed', () => {
+  it('ramcp fleet rejects as unknown command', () => {
+    cli(['init']);
+    const r = cli(['fleet', 'list']);
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('Unknown command: fleet');
   });
 });

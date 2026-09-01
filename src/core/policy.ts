@@ -28,7 +28,6 @@ export const TOOL_SCOPES: Record<string, string[]> = {
   formatting: ['format_python', 'lint_python'],
   documents: ['create_document'],
   ops: ['environment_inspect', 'nginx_inspect'],
-  fleet: ['fleet_list', 'fleet_status'],
 };
 
 /** Tools that mutate state — refused under read_only. */

@@ -5,11 +5,8 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { assertToolPermitted } from '../core/policy.js';
 import { isWindows, isMac, which, shellCommand, childEnv } from '../core/platform.js';
 import type { ToolContext } from '../core/context.js';
-import { sshRun, assertCapability, buildPackageListCommand, type FleetHost } from '../core/fleet.js';
-import { hostParam } from './shell.js';
 
 const exec = promisify(execFile);
-const fleetHostsOf = (ctx: ToolContext): FleetHost[] => ctx.cfg.fleet?.hosts || [];
 const MAX = 60_000;
 
 /** Which package manager this machine actually has. */
@@ -31,19 +28,9 @@ export function registerPackageTools(server: McpServer, ctx: ToolContext): void 
       inputSchema: {
         filter: z.string().optional().describe('Filter by name substring'),
         limit: z.number().optional().default(200).describe('Max results'),
-        ...hostParam(ctx),
       },
     },
-    async ({ filter, limit, host }) => {
-      if (host && !fleetHostsOf(ctx).length) {
-        return { content: [{ type: 'text', text: 'No fleet hosts are configured on this gateway. Add one with `ramcp fleet add` before using host parameters.' }], isError: true };
-      }
-      if (host) {
-        const h = assertCapability(fleetHostsOf(ctx), host, 'packages');
-        const { stdout } = await sshRun(h.host, h.port, buildPackageListCommand(filter));
-        const lines = stdout.split('\n').filter(Boolean).slice(0, limit);
-        return { content: [{ type: 'text', text: `[${host}/apt]\n` + lines.join('\n') }] };
-      }
+    async ({ filter, limit }) => {
       assertToolPermitted({ tool: 'package_list', scopes: ctx.token.scopes, readOnly: ctx.readOnly });
       const mgr = detectManager();
       try {

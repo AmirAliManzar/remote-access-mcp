@@ -122,7 +122,7 @@ Get it ready-made: `ramcp url`
 
 Endpoint `https://your-domain.com/mcp` + header `Authorization: Bearer <token>`
 
-## Tools (38 across 15 suites)
+## Tools (44 across 17 suites)
 
 **Filesystem** (7) `list_directory` `read_file` (offset/limit) `write_file` `edit_file` `delete_path` `search_code` `file_info`
 
@@ -151,20 +151,6 @@ Endpoint `https://your-domain.com/mcp` + header `Authorization: Bearer <token>`
 **Planning** (4) `create_task_plan` `task_status` `workspace_snapshot` `rollback_changes` — snapshot before risky edits, roll back atomically
 
 **Policy** (4) `list_allowed_paths` `allow_path` `deny_path` `shell_enabled` — each token manages only its own sandbox
-
-## Fleet: drive other machines over SSH
-
-The gateway itself stays on one box; every remote-capable tool gains a `host` parameter that routes over SSH. No agent software on the remotes — just an SSH server and your key on the gateway.
-
-```bash
-# on the gateway:
-ramcp fleet add --name web1 --host deploy@10.0.0.5 --tools shell,fs --note "app server"
-ramcp fleet test                 # reachability probe for all hosts
-```
-
-Then from the chatbot: *"read the nginx log on web1"* → `journal(unit: "nginx.service", host: "web1")`.
-
-Each host gets an explicit tool allowlist (`shell fs logs services packages`) — a host that was never granted a group refuses it with a clear error, before any SSH attempt. Remote file writes pipe content over stdin (base64), never temp files. SSH runs with `BatchMode` — no password prompts, ever.
 
 ## Webhooks
 
@@ -218,7 +204,7 @@ cd remote-access-mcp
 npm ci && npm run build && npm test
 ```
 
-122 tests: policy engine, auth matrix, transport compatibility (stateful, stateless, legacy SSE), cross-platform platform layer, tunnel wiring, CLI lifecycle, crash regressions. CI runs on Node 18/20/22.
+107 tests: policy engine, auth matrix, transport compatibility (stateful, stateless, legacy SSE), cross-platform layer, tunnel wiring, webhooks, config backup, CLI lifecycle, crash regressions. CI runs on Node 18/20/22.
 
 ## License
 

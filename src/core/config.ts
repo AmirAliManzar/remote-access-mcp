@@ -33,8 +33,6 @@ export interface RamcpConfig {
   mcp_path_aliases?: string[];
   /** Tunnel settings for laptops/desktops with no public IP. */
   tunnel?: { provider: 'cloudflare'; auto_start: boolean };
-  /** Remote machines this gateway may drive over SSH (v3 fleet mode). */
-  fleet?: { hosts: import('./fleet.js').FleetHost[] };
   /** Optional outbound webhooks fired on audit events (v3). */
   webhooks?: { url: string; events: string[]; enabled: boolean }[];
   log_level: 'debug' | 'info' | 'warn' | 'error' | 'silent';
@@ -114,8 +112,7 @@ export function loadConfig(): RamcpConfig {
     saveConfig(migrated); // persist immediately so we never re-migrate
     return migrated;
   }
-  // v3: default empty fleet/webhooks so callers never null-check
-  if (!Array.isArray(raw.fleet?.hosts)) raw.fleet = { hosts: [] };
+  // default empty webhooks so callers never null-check
   if (!Array.isArray(raw.webhooks)) raw.webhooks = [];
 
   // v2.0→v2.0.2 audit path migration (.db → .jsonl, format switched off better-sqlite3)

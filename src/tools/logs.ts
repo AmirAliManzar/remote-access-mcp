@@ -5,11 +5,8 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { assertToolPermitted, assertAllowed } from '../core/policy.js';
 import type { ToolContext } from '../core/context.js';
-import { sshRun, assertCapability, buildTailCommand, buildSearchCommand, buildJournalCommand, type FleetHost } from '../core/fleet.js';
-import { hostParam } from './shell.js';
 
 const exec = promisify(execFile);
-const fleetHostsOf = (ctx: ToolContext): FleetHost[] => ctx.cfg.fleet?.hosts || [];
 const MAX = 100_000;
 
 export function registerLogTools(server: McpServer, ctx: ToolContext): void {
@@ -26,18 +23,9 @@ export function registerLogTools(server: McpServer, ctx: ToolContext): void {
       inputSchema: {
         path: z.string().describe('Log file path'),
         lines: z.number().optional().default(100).describe('Number of lines'),
-        ...hostParam(ctx),
       },
     },
-    async ({ path: file, lines, host }) => {
-      if (host && !fleetHostsOf(ctx).length) {
-        return { content: [{ type: 'text', text: 'No fleet hosts are configured on this gateway. Add one with `ramcp fleet add` before using host parameters.' }], isError: true };
-      }
-      if (host) {
-        const h = assertCapability(fleetHostsOf(ctx), host, 'logs');
-        const { stdout } = await sshRun(h.host, h.port, buildTailCommand(file, lines));
-        return { content: [{ type: 'text', text: stdout || '(empty)' }] };
-      }
+    async ({ path: file, lines }) => {
       assertToolPermitted({ tool: 'tail_logs', scopes: ctx.token.scopes, readOnly: ctx.readOnly, policy: policy(), target: file });
       const stat = fs.statSync(file);
       const fh = fs.openSync(file, 'r');
@@ -61,18 +49,9 @@ export function registerLogTools(server: McpServer, ctx: ToolContext): void {
         pattern: z.string().describe('Regex to search'),
         context: z.number().optional().default(0).describe('Context lines around each match'),
         max_results: z.number().optional().default(50).describe('Max matches'),
-        ...hostParam(ctx),
       },
     },
-    async ({ path: file, pattern, context, max_results, host }) => {
-      if (host && !fleetHostsOf(ctx).length) {
-        return { content: [{ type: 'text', text: 'No fleet hosts are configured on this gateway. Add one with `ramcp fleet add` before using host parameters.' }], isError: true };
-      }
-      if (host) {
-        const h = assertCapability(fleetHostsOf(ctx), host, 'logs');
-        const { stdout } = await sshRun(h.host, h.port, buildSearchCommand(file, pattern, max_results), { timeoutMs: 180_000 });
-        return { content: [{ type: 'text', text: stdout || 'No matches' }] };
-      }
+    async ({ path: file, pattern, context, max_results }) => {
       assertToolPermitted({ tool: 'search_logs', scopes: ctx.token.scopes, readOnly: ctx.readOnly, policy: policy(), target: file });
       const re = new RegExp(pattern);
       const content = fs.readFileSync(file, 'utf8');
@@ -95,18 +74,9 @@ export function registerLogTools(server: McpServer, ctx: ToolContext): void {
       inputSchema: {
         unit: z.string().regex(/^[A-Za-z0-9@._\-]+$/, 'service/unit names only').describe('Service name, e.g. nginx.service (Linux) or a process name'),
         lines: z.number().optional().default(100).describe('Number of entries'),
-        ...hostParam(ctx),
       },
     },
-    async ({ unit, lines, host }) => {
-      if (host && !fleetHostsOf(ctx).length) {
-        return { content: [{ type: 'text', text: 'No fleet hosts are configured on this gateway. Add one with `ramcp fleet add` before using host parameters.' }], isError: true };
-      }
-      if (host) {
-        const h = assertCapability(fleetHostsOf(ctx), host, 'logs');
-        const { stdout } = await sshRun(h.host, h.port, buildJournalCommand(unit, lines));
-        return { content: [{ type: 'text', text: stdout || '(empty)' }] };
-      }
+    async ({ unit, lines }) => {
       assertToolPermitted({ tool: 'journal', scopes: ctx.token.scopes, readOnly: ctx.readOnly });
       const { isWindows, isMac, which, shellCommand, childEnv } = await import('../core/platform.js');
       const n = Math.min(lines, 500);
