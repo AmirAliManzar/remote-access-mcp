@@ -12,7 +12,9 @@
     "README.md",
     "README.fa.md",
     "LICENSE",
-    "install.sh"
+    "install.sh",
+    "AGENTS.md",
+    "docs/ai"
   ],
   "engines": {
     "node": ">=20.18.1"
