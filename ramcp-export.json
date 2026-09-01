@@ -1,0 +1,42 @@
+{
+  "host": "127.0.0.1",
+  "port": 8765,
+  "public_host": "",
+  "mcp_path": "/mcp",
+  "log_level": "info",
+  "audit": {
+    "enabled": true,
+    "db_path": "/tmp/ramcp-clihome-gUmcuW/.config/remote-access-mcp/audit.jsonl"
+  },
+  "read_only": false,
+  "tokens": [
+    {
+      "id": "52f41568",
+      "name": "default",
+      "token": "OBGKIzc5xq9sWiLObxxnFmvWs81N5hGiC82vVvS4ei9Gmiz4",
+      "created": "2026-09-01T04:25:31.373Z",
+      "scopes": [],
+      "read_only": false,
+      "shell_enabled": false,
+      "allowed_paths": [
+        "/tmp"
+      ],
+      "denied_paths": []
+    },
+    {
+      "id": "cdac5efc",
+      "name": "second",
+      "token": "rDYY9wElgEeNhUVDfZecN2hMysncfn5gecUHZ5NClgKF_qmA",
+      "created": "2026-09-01T04:25:31.492Z",
+      "scopes": [],
+      "read_only": false,
+      "shell_enabled": true,
+      "allowed_paths": [],
+      "denied_paths": []
+    }
+  ],
+  "fleet": {
+    "hosts": []
+  },
+  "webhooks": []
+}

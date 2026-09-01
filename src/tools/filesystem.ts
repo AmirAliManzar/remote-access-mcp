@@ -4,7 +4,13 @@ import path from 'node:path';
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { assertToolPermitted, assertAllowed, PolicyError } from '../core/policy.js';
+import { sshRun, assertCapability, FleetHost, buildReadCommand, buildWriteCommand, buildDeleteCommand, buildListCommand, buildFileInfoCommand, buildSearchCommand } from '../core/fleet.js';
+import { hostParam } from './shell.js';
 import type { ToolContext } from '../core/context.js';
+
+const B64_DECODE = (s: string) => Buffer.from(s.replace(/\n/g, ''), 'base64').toString('utf8');
+
+function fleetHostsOf(ctx: ToolContext): FleetHost[] { return ctx.cfg.fleet?.hosts || []; }
 
 export function registerFilesystemTools(server: McpServer, ctx: ToolContext): void {
   const perm = (tool: string, target?: string) =>
@@ -19,10 +25,15 @@ export function registerFilesystemTools(server: McpServer, ctx: ToolContext): vo
   // ---- list_directory ---------------------------------------------------
   server.registerTool('list_directory',
     {
-      description: 'List a directory. Policy-checked.',
-      inputSchema: { path: z.string().describe('Directory path') },
+      description: 'List a directory. Policy-checked locally; on fleet hosts needs the fs group.',
+      inputSchema: { path: z.string().describe('Directory path'), ...hostParam(ctx) },
     },
-    async ({ path: dir }) => {
+    async ({ path: dir, host }) => {
+      if (host) {
+        const h = assertCapability(fleetHostsOf(ctx), host, 'fs');
+        const { stdout } = await sshRun(h.host, h.port, buildListCommand(dir));
+        return { content: [{ type: 'text', text: stdout || '(empty)' }] };
+      }
       perm('list_directory', dir);
       const entries = await fsp.readdir(dir, { withFileTypes: true });
       const lines = entries.map(e => {
@@ -40,9 +51,22 @@ export function registerFilesystemTools(server: McpServer, ctx: ToolContext): vo
         path: z.string().describe('File path'),
         offset: z.number().optional().describe('Start line (1-based)'),
         limit: z.number().optional().describe('Max lines to return'),
+        ...hostParam(ctx),
       },
     },
-    async ({ path: file, offset, limit }) => {
+    async ({ path: file, offset, limit, host }) => {
+      if (host) {
+        const h = assertCapability(fleetHostsOf(ctx), host, 'fs');
+        const { stdout } = await sshRun(h.host, h.port, buildReadCommand(file));
+        if (!stdout.trim()) return { content: [{ type: 'text', text: `No such file or unreadable: ${file}` }], isError: true };
+        let data = B64_DECODE(stdout.trim());
+        if (offset || limit) {
+          const lines = data.split('\n');
+          const start = Math.max((offset || 1) - 1, 0);
+          data = lines.slice(start, start + (limit || lines.length)).join('\n');
+        }
+        return { content: [{ type: 'text', text: data }] };
+      }
       perm('read_file', file);
       let data = await fsp.readFile(file, 'utf8');
       if (offset || limit) {
@@ -61,9 +85,16 @@ export function registerFilesystemTools(server: McpServer, ctx: ToolContext): vo
         path: z.string().describe('File path'),
         content: z.string().describe('Full file content'),
         mkdir: z.boolean().optional().default(true).describe('Create parent directories'),
+        ...hostParam(ctx),
       },
     },
-    async ({ path: file, content, mkdir }) => {
+    async ({ path: file, content, mkdir, host }) => {
+      if (host) {
+        const h = assertCapability(fleetHostsOf(ctx), host, 'fs');
+        const b64 = Buffer.from(content, 'utf8').toString('base64');
+        await sshRun(h.host, h.port, buildWriteCommand(file, content, mkdir), { stdin: b64 });
+        return { content: [{ type: 'text', text: `Wrote ${Buffer.byteLength(content)} bytes to ${file} on ${host}` }] };
+      }
       perm('write_file', file);
       if (mkdir) await fsp.mkdir(path.dirname(file), { recursive: true });
       await fsp.writeFile(file, content, 'utf8');
@@ -95,10 +126,15 @@ export function registerFilesystemTools(server: McpServer, ctx: ToolContext): vo
   // ---- delete_path -------------------------------------------------------
   server.registerTool('delete_path',
     {
-      description: 'Delete a file or a directory tree. Policy-checked. Destructive.',
-      inputSchema: { path: z.string().describe('Path to delete') },
+      description: 'Delete a file or a directory tree. Policy-checked locally. Destructive.',
+      inputSchema: { path: z.string().describe('Path to delete'), ...hostParam(ctx) },
     },
-    async ({ path: target }) => {
+    async ({ path: target, host }) => {
+      if (host) {
+        const h = assertCapability(fleetHostsOf(ctx), host, 'fs');
+        await sshRun(h.host, h.port, buildDeleteCommand(target));
+        return { content: [{ type: 'text', text: `Deleted ${target} on ${host}` }] };
+      }
       perm('delete_path', target);
       const st = fs.lstatSync(target);
       if (st.isDirectory()) {
@@ -118,9 +154,16 @@ export function registerFilesystemTools(server: McpServer, ctx: ToolContext): vo
         pattern: z.string().describe('JavaScript regex, e.g. "TODO|FIXME"'),
         include: z.string().optional().describe('Substring filter for file names, e.g. ".ts"'),
         max_results: z.number().optional().default(100).describe('Cap on matches'),
+        ...hostParam(ctx),
       },
     },
-    async ({ path: dir, pattern, include, max_results }) => {
+    async ({ path: dir, pattern, include, max_results, host }) => {
+      if (host) {
+        const h = assertCapability(fleetHostsOf(ctx), host, 'fs');
+        const cmd = buildSearchCommand(dir, pattern, max_results) + (include ? ` | grep ${include}` : '');
+        const { stdout } = await sshRun(h.host, h.port, cmd, { timeoutMs: 180_000 });
+        return { content: [{ type: 'text', text: stdout || 'No matches' }] };
+      }
       perm('search_code', dir);
       const re = new RegExp(pattern);
       const results: string[] = [];
@@ -152,10 +195,15 @@ export function registerFilesystemTools(server: McpServer, ctx: ToolContext): vo
   // ---- file_info -----------------------------------------------------------
   server.registerTool('file_info',
     {
-      description: 'Stat a file or directory: size, timestamps, permissions, owner. Policy-checked.',
-      inputSchema: { path: z.string().describe('Path') },
+      description: 'Stat a file or directory: size, timestamps, permissions, owner. Policy-checked locally.',
+      inputSchema: { path: z.string().describe('Path'), ...hostParam(ctx) },
     },
-    async ({ path: target }) => {
+    async ({ path: target, host }) => {
+      if (host) {
+        const h = assertCapability(fleetHostsOf(ctx), host, 'fs');
+        const { stdout } = await sshRun(h.host, h.port, buildFileInfoCommand(target));
+        return { content: [{ type: 'text', text: stdout }] };
+      }
       perm('file_info', target);
       const st = await fsp.stat(target);
       const out = [

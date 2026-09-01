@@ -152,6 +152,39 @@ Endpoint `https://your-domain.com/mcp` + header `Authorization: Bearer <token>`
 
 **Policy** (4) `list_allowed_paths` `allow_path` `deny_path` `shell_enabled` — each token manages only its own sandbox
 
+## Fleet: drive other machines over SSH
+
+The gateway itself stays on one box; every remote-capable tool gains a `host` parameter that routes over SSH. No agent software on the remotes — just an SSH server and your key on the gateway.
+
+```bash
+# on the gateway:
+ramcp fleet add --name web1 --host deploy@10.0.0.5 --tools shell,fs --note "app server"
+ramcp fleet test                 # reachability probe for all hosts
+```
+
+Then from the chatbot: *"read the nginx log on web1"* → `journal(unit: "nginx.service", host: "web1")`.
+
+Each host gets an explicit tool allowlist (`shell fs logs services packages`) — a host that was never granted a group refuses it with a clear error, before any SSH attempt. Remote file writes pipe content over stdin (base64), never temp files. SSH runs with `BatchMode` — no password prompts, ever.
+
+## Webhooks
+
+Get notified when tools run (or fail) — incident bots, Slack relays, anything that accepts a POST:
+
+```bash
+ramcp webhook add --url https://hooks.example.com/ramcp --events tool.error
+ramcp webhook list
+```
+
+Fire-and-forget: a dead endpoint never delays a tool call (5s cap, deduped within 10s).
+
+## Backup & restore
+
+```bash
+ramcp config export --out backup.json     # full snapshot, 0600 perms — contains live tokens!
+ramcp config import backup.json           # replace
+ramcp config import backup.json --merge   # union: keeps local identity, adds new tokens/hosts/hooks
+```
+
 ## Security model
 
 - **Loopback only.** The gateway listens on `127.0.0.1` — unreachable directly from the network.
@@ -185,7 +218,7 @@ cd remote-access-mcp
 npm ci && npm run build && npm test
 ```
 
-96 tests: policy engine, auth matrix, transport compatibility (stateful, stateless, legacy SSE), cross-platform platform layer, tunnel wiring, CLI lifecycle, crash regressions. CI runs on Node 18/20/22.
+122 tests: policy engine, auth matrix, transport compatibility (stateful, stateless, legacy SSE), cross-platform platform layer, tunnel wiring, CLI lifecycle, crash regressions. CI runs on Node 18/20/22.
 
 ## License
 

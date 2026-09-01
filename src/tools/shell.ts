@@ -5,9 +5,23 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { assertToolPermitted } from '../core/policy.js';
 import { shellCommand, childEnv, isWindows } from '../core/platform.js';
 import type { ToolContext } from '../core/context.js';
+import { sshRun, buildRunCommand, type FleetHost } from '../core/fleet.js';
 
 const exec = promisify(execFile);
 const MAX_OUTPUT = 60_000;
+
+function fleetHosts(ctx: ToolContext): FleetHost[] {
+  return ctx.cfg.fleet?.hosts || [];
+}
+
+/** Shared optional host param, advertised only when a fleet is configured. */
+export function hostParam(ctx: ToolContext, names?: string): { host?: any } {
+  const hosts = fleetHosts(ctx);
+  if (!hosts.length) return {};
+  return {
+    host: z.string().optional().describe(`Run on fleet machine${names ? ` (${names})` : ''}: ${hosts.map(h => h.name).join(', ')}. Omit for local.`),
+  };
+}
 
 // Shell injection surface: we run a shell by design (the tool IS a shell).
 // Guard rails: timeout, output cap, no TTY, cwd policy-checked.
@@ -21,17 +35,27 @@ export function registerShellTools(server: McpServer, ctx: ToolContext): void {
   // ---- run_command -------------------------------------------------------
   server.registerTool('run_command',
     {
-      description: 'Execute a shell command (bash/sh on POSIX, PowerShell/cmd on Windows). Requires shell enabled for this token. 120s default timeout.',
+      description: 'Execute a shell command (bash/sh on POSIX, PowerShell/cmd on Windows; sh on fleet hosts). Requires shell enabled. 120s default timeout.',
       inputSchema: {
         command: z.string().describe('Command line to run'),
-        cwd: z.string().optional().describe('Working directory (policy-checked)'),
+        cwd: z.string().optional().describe('Working directory (policy-checked when local)'),
         timeout_ms: z.number().optional().default(120_000).describe('Timeout in ms (max 600000)'),
+        ...hostParam(ctx),
       },
     },
-    async ({ command, cwd, timeout_ms }) => {
+    async ({ command, cwd, host, timeout_ms }) => {
       if (!ctx.token.shell_enabled) {
         return { content: [{ type: 'text', text: 'Shell execution is disabled for this token. Enable with `ramcp policy shell on`.' }], isError: true };
       }
+
+      // Fleet path: per-host allowlist + SSH, no local policy check (the
+      // command does not touch this machine).
+      if (host) {
+        const h = (await import('../core/fleet.js')).assertCapability(fleetHosts(ctx), host, 'shell');
+        const { stdout } = await sshRun(h.host, h.port, buildRunCommand(command, undefined, timeout_ms), { timeoutMs: Math.min(timeout_ms, 600_000) });
+        return { content: [{ type: 'text', text: (stdout || '(no output)').slice(0, MAX_OUTPUT) }] };
+      }
+
       assertToolPermitted({ tool: 'run_command', scopes: ctx.token.scopes, readOnly: ctx.readOnly, policy: policy(), target: cwd });
       const timeout = Math.min(timeout_ms, 600_000);
       const { file, args } = shellCommand(command);
@@ -61,10 +85,17 @@ export function registerShellTools(server: McpServer, ctx: ToolContext): void {
   // ---- process_list ---------------------------------------------------------
   server.registerTool('process_list',
     {
-      description: 'List running processes with CPU/memory. Uses ps on POSIX, Get-Process on Windows.',
-      inputSchema: {},
+      description: 'List running processes with CPU/memory. Local machine, or a fleet host with the shell group.',
+      inputSchema: {
+        ...hostParam(ctx),
+      },
     },
-    async () => {
+    async ({ host }) => {
+      if (host) {
+        const h = (await import('../core/fleet.js')).assertCapability(fleetHosts(ctx), host, 'shell');
+        const { stdout } = await sshRun(h.host, h.port, "ps axo pid,ppid,user,pcpu,pmem,comm --sort=-pcpu | head -80", { timeoutMs: 30_000 });
+        return { content: [{ type: 'text', text: stdout.slice(0, MAX_OUTPUT) }] };
+      }
       assertToolPermitted({ tool: 'process_list', scopes: ctx.token.scopes, readOnly: ctx.readOnly });
       try {
         if (isWindows()) {

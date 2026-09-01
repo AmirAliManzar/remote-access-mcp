@@ -12,6 +12,7 @@ import { AuditLog, redactArgs } from '../core/audit.js';
 import { RateLimiter } from '../core/rate-limit.js';
 import { tokensMatch } from '../core/crypto.js';
 import { registerAllTools } from '../tools/index.js';
+import { notifyWebhooks } from '../core/webhooks.js';
 import { startScheduler } from '../tools/schedule.js';
 import { SessionStore } from './sessions.js';
 import { LegacySseStore } from './legacy-sse.js';
@@ -214,6 +215,9 @@ export function buildApp(state?: GatewayState): { app: express.Express; cfg: Ram
           result = { content: [{ type: 'text', text: e?.message || 'tool error' }], isError: true };
         }
         ctx.audit(name, args || {}, !isError, isError, Date.now() - started);
+        // Webhook notifications ride along with audit — fire-and-forget,
+        // never part of the request path.
+        try { notifyWebhooks(gw.cfg, { ts: Date.now(), token_fingerprint: AuditLog.fingerprint(token.token), tool: name, args_json: '', ok: !isError ? 1 : 0, is_error: isError ? 1 : 0, duration_ms: Date.now() - started }); } catch { /* advisory */ }
         return result;
       };
       return origRegister(name, config, wrapped);

@@ -34,19 +34,32 @@ The vision: one command turns any server into an AI-controllable machine — sec
 - [ ] Prometheus `/metrics` endpoint (opt-in)
 - [ ] WebSocket transport alongside Streamable HTTP
 
-## v3.0 — Fleet
+## v3.0 — Fleet (done)
 
-- [ ] Multi-server mode: one gateway, SSH out to N machines, tools take a `--host` parameter
-- [ ] Fleet dashboard: `ramcp fleet status` across all machines
-- [ ] Token sharing across machines with per-host policies
-- [ ] MCP tool result caching for repeated expensive calls
+- [x] **Multi-server mode**: one gateway, SSH out to N machines — `ramcp fleet add --name web1 --host deploy@10.0.0.5 --tools shell,fs`
+- [x] Remote-capable tools: run_command, process_list, read_file, write_file, delete_path, search_code, file_info, list_directory, tail_logs, search_logs, journal, service_status, service_action, package_list — all take an optional `host` parameter
+- [x] Per-host tool allowlists (shell/fs/logs/services/packages) — enforced before any SSH attempt
+- [x] `ramcp fleet list | add | remove | edit | test | status`
+- [x] Webhook notifications on tool events (`ramcp webhook add --url …`), fire-and-forget, deduped, 5s cap
+- [x] `ramcp config export | import [--merge]` for backup/restore with host-identity preservation
+- [x] Fleet file writes pipe over stdin (base64) — no temp files, no heredocs
+
+## v3.x — Under consideration
+
+- [ ] WebSocket transport alongside Streamable HTTP — deferred: no client we
+      support (ChatGPT, Grok, Claude) requires it today, and the streamable
+      transport already covers the same ground. Will revisit when a real
+      client asks.
+- [ ] Tool result caching for repeated expensive calls — deferred: the
+      stateless transport makes caching semantics ambiguous (per token?
+      per session? TTL from where?), and no user has hit a bottleneck
+      that caching would fix. Premature.
 
 ## Ideas parking lot
 
-- `ramcp config export/import` for backup/restore
-- Webhook notifications on audit anomalies (e.g. new token created, read-only violated)
 - Pinned-tool aliases: expose a git-command as a narrower custom tool
 - Integration recipes: pre-scoped tokens for "deploy my Node app", "restart nginx", common workflows
+- Per-host policy paths (fleet fs scoped to specific remote directories)
 
 ## Non-goals
 

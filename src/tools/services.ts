@@ -5,8 +5,11 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { assertToolPermitted } from '../core/policy.js';
 import { isWindows, isMac, which, shellCommand, childEnv } from '../core/platform.js';
 import type { ToolContext } from '../core/context.js';
+import { sshRun, assertCapability, buildServiceStatusCommand, buildServiceActionCommand, type FleetHost } from '../core/fleet.js';
+import { hostParam } from './shell.js';
 
 const exec = promisify(execFile);
+const fleetHostsOf = (ctx: ToolContext): FleetHost[] => ctx.cfg.fleet?.hosts || [];
 const MAX = 40_000;
 
 // Whitelist of actions — anything else would let the AI restart
@@ -24,10 +27,15 @@ export function registerServiceTools(server: McpServer, ctx: ToolContext): void 
   // ---- service_status -------------------------------------------------------
   server.registerTool('service_status',
     {
-      description: 'Show a service state. systemctl on Linux, launchctl on macOS, Get-Service on Windows. Read-only.',
-      inputSchema: { unit: z.string().regex(/^[A-Za-z0-9@._\-]+$/) },
+      description: 'Show a service state. systemctl on Linux, launchctl on macOS, Get-Service on Windows; systemctl on fleet hosts.',
+      inputSchema: { unit: z.string().regex(/^[A-Za-z0-9@._\-]+$/), ...hostParam(ctx) },
     },
-    async ({ unit }) => {
+    async ({ unit, host }) => {
+      if (host) {
+        const h = assertCapability(fleetHostsOf(ctx), host, 'services');
+        const { stdout } = await sshRun(h.host, h.port, buildServiceStatusCommand(unit));
+        return { content: [{ type: 'text', text: stdout.trim() || '(not found)' }] };
+      }
       assertToolPermitted({ tool: 'service_status', scopes: ctx.token.scopes, readOnly: ctx.readOnly });
       try {
         if (isWindows()) {
@@ -59,9 +67,18 @@ export function registerServiceTools(server: McpServer, ctx: ToolContext): void 
       inputSchema: {
         unit: z.string().regex(/^[A-Za-z0-9@._\-]+$/).describe('Service name'),
         action: z.enum(SERVICE_ACTIONS).describe('start | stop | restart | reload | status'),
+        ...hostParam(ctx),
       },
     },
-    async ({ unit, action }) => {
+    async ({ unit, action, host }) => {
+      if (host) {
+        const h = assertCapability(fleetHostsOf(ctx), host, 'services');
+        if (PROTECTED_UNITS.test(unit)) {
+          return { content: [{ type: 'text', text: `Refusing to touch protected service ${unit}.` }], isError: true };
+        }
+        const { stdout } = await sshRun(h.host, h.port, buildServiceActionCommand(unit, action));
+        return { content: [{ type: 'text', text: `${unit} ${action} on ${host}:\n${stdout}`.slice(0, MAX) }] };
+      }
       assertToolPermitted({ tool: 'service_action', scopes: ctx.token.scopes, readOnly: ctx.readOnly, policy: policy() });
       if (PROTECTED_UNITS.test(unit)) {
         return { content: [{ type: 'text', text: `Refusing to touch protected service ${unit}.` }], isError: true };

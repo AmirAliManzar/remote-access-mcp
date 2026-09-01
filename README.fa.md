@@ -62,6 +62,27 @@ ramcp token add --name deploy --paths /srv/app --scopes filesystem,git,shell --s
 
 فایل‌سیستم (۷)، شل (۳)، سیستم (۳)، HTTP با محافظ SSRF (۳)، گیت با whitelist فعل‌ها (۱)، SQLite تک-دستوره (۲)، لاگ/journalctl (۳)، سرویس‌های systemd (۲)، پکیج‌ها apt/npm (۳)، زمان‌بند (۳)، اسکن امنیتی (۲)، تحلیل پروژه (۲)، پلنینگ + اسنپ‌شات/rollback (۴)، مدیریت پالیسی (۴).
 
+## Fleet: کنترل چند سرور با SSH
+
+گیت‌وی روی یک ماشین می‌مونه؛ ابزارهای remote-capable پارامتر `host` می‌گیرن و از طریق SSH روی ماشین دیگه اجرا میشن. روی سرورهای ریموت هیچ نرم‌افزاری نصب نمیشه — فقط یه SSH server و کلید شما روی گیت‌وی.
+
+```bash
+ramcp fleet add --name web1 --host deploy@10.0.0.5 --tools shell,fs --note "app server"
+ramcp fleet test                 # تست دسترسی همه هاست‌ها
+```
+
+بعد از داخل چت‌بات: «لاگ nginx روی web1 رو ببین» → `journal(unit: "nginx.service", host: "web1")`.
+
+هر هاست allowlist ابزار خودش رو داره (`shell fs logs services packages`) — هاستی که گروهی رو نگرفته با خطای واضح رد میشه، قبل از هر تلاش SSH. نوشتن فایل ریموت از طریق stdin (base64) انجام میشه — بدون فایل موقت. SSH با BatchMode اجرا میشه — هیچ پرامپت پسوردی نیست.
+
+## Webhook و بکاپ
+
+```bash
+ramcp webhook add --url https://hooks.example.com/ramcp --events tool.error
+ramcp config export --out backup.json    # اسنپ‌شات کامل — توکن‌های زنده داره!
+ramcp config import backup.json --merge  # ادغام با حفظ هویت محلی
+```
+
 ## مدل امنیتی
 
 - **فقط loopback** — سرور روی `127.0.0.1` گوش میده
