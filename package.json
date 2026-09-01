@@ -73,7 +73,7 @@
     "@types/node": "^22.10.0",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0",
-    "vitest": "^2.1.0"
+    "vitest": "^4.1.11"
   },
   "allowScripts": {
     "codebase-memory-mcp@0.10.8": true,
