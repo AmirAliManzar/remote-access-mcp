@@ -1,0 +1,43 @@
+name: Debug CI env
+
+on:
+  workflow_dispatch:
+
+jobs:
+  debug:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Probe test env
+        run: |
+          echo "runner HOME=$HOME"
+          node -e "console.log('homedir:', require('os').homedir())"
+          env | grep -iE "home|xdg" || true
+      - name: Run vitest with env logging
+        run: |
+          cat > tests/check-env.test.ts <<'EOF'
+          import { describe, it, expect } from 'vitest';
+          import os from 'node:os';
+          import fs from 'node:fs';
+          import { dataDir } from '../src/core/platform.js';
+          describe('env probe', () => {
+            it('logs env', () => {
+              console.log('TEST_HOME=', process.env.HOME);
+              console.log('homedir=', os.homedir());
+              console.log('XDG_CONFIG_HOME=', process.env.XDG_CONFIG_HOME || '(unset)');
+              console.log('dataDir=', dataDir());
+              console.log('dataDir-under-home=', dataDir().startsWith(os.homedir()));
+              expect(true).toBe(true);
+            });
+          });
+          EOF
+          npx vitest run tests/check-env.test.ts
+          rm tests/check-env.test.ts
+      - name: Full test run with logs
+        run: npm test 2>&1 | tail -80
