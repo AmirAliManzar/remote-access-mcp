@@ -50,7 +50,7 @@ Paths the AI may touch (per token):
 
 Tokens:
   token list [--json]
-  token add --name N [--paths a,b] [--shell] [--scopes g,g]
+  token add --name N [--paths a,b] [--shell] [--scopes g,g] [--role auditor|developer|deployer|admin]
             [--read-only] [--rpm N] [--expires YYYY-MM-DD]
   token show [N] [--full] | token rotate [N] | token revoke N
 
@@ -94,7 +94,7 @@ function parseArgs(argv: string[]): Args {
   const flags = new Set<string>();
   const values = new Map<string, string>();
   // Flags that always take a value (so `--paths /a /b` still works positionally)
-  const valueFlags = new Set(['name', 'paths', 'deny', 'scopes', 'rpm', 'expires', 'token', 'host', 'port', 'domain', 'tool', 'since', 'limit', 'tools', 'url', 'events', 'out', 'note']);
+  const valueFlags = new Set(['name', 'paths', 'deny', 'scopes', 'rpm', 'expires', 'token', 'host', 'port', 'domain', 'tool', 'since', 'limit', 'tools', 'url', 'events', 'out', 'note', 'role', 'commands', 'approval']);
   for (let i = 0; i < rest.length; i++) {
     const a = rest[i];
     if (a.startsWith('--')) {
@@ -259,7 +259,7 @@ function cmdToken(args: Args): void {
     if (jsonOut(args)) {
       console.log(JSON.stringify(cfg.tokens.map(t => ({
         id: t.id, name: t.name, created: t.created, expires: t.expires || null,
-        scopes: t.scopes, read_only: !!t.read_only, shell: t.shell_enabled,
+        scopes: t.scopes, role: t.role || null, approval_mode: t.approval_mode || 'auto', command_allowlist: t.command_allowlist || [], read_only: !!t.read_only, shell: t.shell_enabled,
         allowed_paths: t.allowed_paths, denied_paths: t.denied_paths,
         rpm: t.max_requests_per_minute || null,
         fingerprint: AuditLog.fingerprint(t.token),
@@ -273,6 +273,7 @@ function cmdToken(args: Args): void {
         `shell:${t.shell_enabled ? 'on ' : 'off'}`,
         `ro:${t.read_only ? 'yes' : 'no '}`,
         `paths:${t.allowed_paths.length}`,
+        t.role ? `role:${t.role}` : '',
         t.expires ? `expires:${t.expires.slice(0, 10)}` : '',
         t.scopes.length ? `scopes:${t.scopes.join('|')}` : '',
       ].filter(Boolean);
@@ -294,6 +295,9 @@ function cmdToken(args: Args): void {
       read_only: args.flags.has('read-only'),
       max_requests_per_minute: args.values.has('rpm') ? parseInt(args.values.get('rpm')!, 10) : undefined,
       expires: args.values.get('expires'),
+      role: args.values.get('role') as any,
+      command_allowlist: splitList(args.values.get('commands')),
+      approval_mode: args.values.get('approval') === 'required' ? 'approval-required' : args.values.get('approval') === 'auto' ? 'auto' : undefined,
     });
     cfg.tokens.push(rec);
     saveConfig(cfg);

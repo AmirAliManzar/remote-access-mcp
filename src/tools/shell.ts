@@ -2,7 +2,9 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { assertToolPermitted } from '../core/policy.js';
+import { assertToolPermitted, assertCommandPolicy } from '../core/policy.js';
+import { AuditLog } from '../core/audit.js';
+import { requestApproval, getApproval, decideApproval } from '../core/approvals.js';
 import { shellCommand, childEnv, isWindows } from '../core/platform.js';
 import type { ToolContext } from '../core/context.js';
 
@@ -26,13 +28,21 @@ export function registerShellTools(server: McpServer, ctx: ToolContext): void {
         command: z.string().describe('Command line to run'),
         cwd: z.string().optional().describe('Working directory (policy-checked when local)'),
         timeout_ms: z.number().optional().default(120_000).describe('Timeout in ms (max 600000)'),
+        approval_id: z.string().optional().describe('Approval id previously approved by an authorized operator'),
       },
     },
-    async ({ command, cwd, timeout_ms }) => {
+    async ({ command, cwd, timeout_ms, approval_id }) => {
       if (!ctx.token.shell_enabled) {
         return { content: [{ type: 'text', text: 'Shell execution is disabled for this token. Enable with `ramcp policy shell on`.' }], isError: true };
       }
       assertToolPermitted({ tool: 'run_command', scopes: ctx.token.scopes, readOnly: ctx.readOnly, policy: policy(), target: cwd });
+      const tokenId = AuditLog.fingerprint(ctx.token.token);
+      const approval = approval_id ? getApproval(approval_id, tokenId) : undefined;
+      if (ctx.token.approval_mode === 'approval-required' && approval?.status !== 'approved') {
+        const pending = requestApproval(tokenId, command, cwd);
+        return { content: [{ type: 'text', text: `Approval required. Ask an authorized operator to approve approval_id=${pending.id}, then retry with approval_id.` }], isError: true };
+      }
+      assertCommandPolicy({ command_allowlist: ctx.token.command_allowlist, approval_mode: 'auto' }, command, true);
       const timeout = Math.min(timeout_ms, 600_000);
       const { file, args } = shellCommand(command);
       try {
@@ -57,6 +67,18 @@ export function registerShellTools(server: McpServer, ctx: ToolContext): void {
         return { content: [{ type: 'text', text: msg.slice(0, MAX_OUTPUT) }], isError: true };
       }
     });
+
+  server.registerTool('approval_decide', {
+    description: 'Approve or reject a pending shell command approval request.',
+    inputSchema: { id: z.string(), approved: z.boolean() },
+  }, async ({ id, approved }) => {
+    assertToolPermitted({ tool: 'approval_decide', scopes: ctx.token.scopes, readOnly: ctx.readOnly });
+    const requesterId = AuditLog.fingerprint(ctx.token.token);
+    const a = getApproval(id, ctx.token.role === 'admin' || ctx.token.role === 'deployer' ? undefined : requesterId);
+    if (!a) return { content: [{ type: 'text', text: 'Approval not found or not authorized.' }], isError: true };
+    decideApproval(id, ctx.token.role === 'admin' || ctx.token.role === 'deployer' ? undefined : requesterId, approved);
+    return { content: [{ type: 'text', text: `Approval ${id}: ${approved ? 'approved' : 'rejected'}.` }] };
+  });
 
   // ---- process_list ---------------------------------------------------------
   server.registerTool('process_list',

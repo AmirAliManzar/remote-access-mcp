@@ -9,6 +9,7 @@ import { buildApp } from './app.js';
 import { startScheduler } from '../tools/schedule.js';
 import { shellCommand, childEnv, platformLabel, writeRuntimeState, clearRuntimeState, dataDir } from '../core/platform.js';
 import { startQuickTunnel, type TunnelHandle } from '../core/tunnel.js';
+import { jobManager } from '../core/jobs.js';
 
 const exec = promisify(execFile);
 const PKG_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -108,6 +109,7 @@ export async function runServer(opts: {
     if (shuttingDown) return;
     shuttingDown = true;
     console.log('\nshutting down...');
+    jobManager.shutdown();
     tunnel?.stop();
     clearRuntimeState();
     httpServer.close(() => process.exit(0));

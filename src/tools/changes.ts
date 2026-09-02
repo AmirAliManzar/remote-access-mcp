@@ -1,0 +1,20 @@
+import fs from 'node:fs/promises';
+import fsSync from 'node:fs';
+import path from 'node:path';
+import crypto from 'node:crypto';
+import { z } from 'zod';
+import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { ToolContext } from '../core/context.js';
+import { assertToolPermitted, assertAllowed } from '../core/policy.js';
+import { dataDir } from '../core/platform.js';
+interface ChangeSet{id:string;tokenId:string;status:'open'|'committed'|'rolled_back';files:{path:string;backup:string}[];created:string;updated:string}
+const file=path.join(dataDir(),'change-sets.json');const dir=path.join(dataDir(),'change-sets');
+function load():ChangeSet[]{try{return JSON.parse(fsSync.readFileSync(file,'utf8'))}catch{return[]}}
+function save(x:ChangeSet[]){fsSync.mkdirSync(path.dirname(file),{recursive:true});fsSync.writeFileSync(file,JSON.stringify(x.slice(-200),null,2),{mode:0o600})}
+export function registerChangeTools(server:McpServer,ctx:ToolContext):void{const tid=crypto.createHash('sha256').update(ctx.token.token).digest('hex').slice(0,16);const policy=()=>({allowed_paths:ctx.token.allowed_paths,denied_paths:ctx.token.denied_paths,shell_enabled:ctx.token.shell_enabled});
+ server.registerTool('change_set_begin',{description:'Begin a transactional file change set. Files are backed up before changes.',inputSchema:{}},async()=>{assertToolPermitted({tool:'change_set_begin',scopes:ctx.token.scopes,readOnly:ctx.readOnly});const id=crypto.randomBytes(6).toString('hex');const c:ChangeSet={id,tokenId:tid,status:'open',files:[],created:new Date().toISOString(),updated:new Date().toISOString()};const a=load();a.push(c);save(a);return{content:[{type:'text',text:`Change set ${id} opened.`}]};});
+ server.registerTool('change_set_add',{description:'Add a file to a change set by taking a backup before mutation.',inputSchema:{id:z.string(),path:z.string()}},async({id,path:target})=>{assertToolPermitted({tool:'change_set_add',scopes:ctx.token.scopes,readOnly:ctx.readOnly,policy:policy(),target:target});const a=load(),c=a.find(x=>x.id===id&&x.tokenId===tid);if(!c||c.status!=='open')return{content:[{type:'text',text:'Open change set not found.'}],isError:true};const backup=path.join(dir,id,crypto.createHash('sha256').update(target).digest('hex'));fsSync.mkdirSync(path.dirname(backup),{recursive:true});await fs.copyFile(target,backup);c.files.push({path:target,backup});c.updated=new Date().toISOString();save(a);return{content:[{type:'text',text:`Backed up ${target} in ${id}.`}]};});
+ server.registerTool('change_set_status',{description:'Show a change set and its backed-up files.',inputSchema:{id:z.string()}},async({id})=>{const c=load().find(x=>x.id===id&&x.tokenId===tid);if(!c)return{content:[{type:'text',text:'Change set not found.'}],isError:true};return{content:[{type:'text',text:JSON.stringify(c,null,2)}]};});
+ server.registerTool('change_set_commit',{description:'Commit a change set. Backups remain available until cleanup.',inputSchema:{id:z.string()}},async({id})=>{assertToolPermitted({tool:'change_set_commit',scopes:ctx.token.scopes,readOnly:ctx.readOnly});const a=load(),c=a.find(x=>x.id===id&&x.tokenId===tid);if(!c||c.status!=='open')return{content:[{type:'text',text:'Open change set not found.'}],isError:true};c.status='committed';c.updated=new Date().toISOString();save(a);return{content:[{type:'text',text:`Change set ${id} committed.`}]};});
+ server.registerTool('change_set_rollback',{description:'Restore all files backed up in a change set.',inputSchema:{id:z.string()}},async({id})=>{assertToolPermitted({tool:'change_set_rollback',scopes:ctx.token.scopes,readOnly:ctx.readOnly,policy:policy()});const a=load(),c=a.find(x=>x.id===id&&x.tokenId===tid);if(!c)return{content:[{type:'text',text:'Change set not found.'}],isError:true};for(const f of c.files){assertAllowed(policy(),f.path);await fs.copyFile(f.backup,f.path)}c.status='rolled_back';c.updated=new Date().toISOString();save(a);return{content:[{type:'text',text:`Rolled back ${c.files.length} file(s) in ${id}.`}]};});
+}

@@ -28,6 +28,16 @@ export const TOOL_SCOPES: Record<string, string[]> = {
   formatting: ['format_python', 'lint_python'],
   documents: ['create_document'],
   ops: ['environment_inspect', 'nginx_inspect'],
+  jobs: ['run_background', 'job_status', 'job_output', 'job_list', 'job_cancel', 'run_parallel'],
+  transfer: ['upload_file', 'download_file'],
+  diagnostics: ['system_diagnostics', 'diagnose_service'],
+  monitoring: ['health_watch', 'health_status', 'health_stop'],
+  database: ['database_query', 'database_schema'],
+  changes: ['change_set_begin', 'change_set_add', 'change_set_status', 'change_set_commit', 'change_set_rollback'],
+  resources: ['system_resource', 'services_resource', 'network_resource', 'projects_resource', 'audit_resource'],
+  prompts: ['diagnose_prompt', 'deploy_prompt', 'security_audit_prompt', 'inspect_project_prompt'],
+  plugins: ['plugin_list', 'plugin_install', 'plugin_remove'],
+  approvals: ['approval_decide'],
 };
 
 /** Tools that mutate state — refused under read_only. */
@@ -36,6 +46,9 @@ export const MUTATING_TOOLS = new Set([
   'git', 'sqlite_query', 'allow_path', 'deny_path',
   'package_install', 'package_remove', 'service_action',
   'schedule_command', 'cancel_scheduled_task', 'workspace_snapshot', 'rollback_changes',
+  'run_background', 'job_cancel', 'run_parallel', 'upload_file',
+  'package_install', 'package_remove', 'service_action', 'change_set_begin', 'change_set_add', 'change_set_commit', 'change_set_rollback',
+  'health_watch', 'health_stop', 'plugin_install', 'plugin_remove',
 ]);
 
 /** Thrown by tools when a target path is outside the policy sandbox. */
@@ -122,6 +135,17 @@ export function scopeOf(tool: string): string | null {
 }
 
 /** Full gate: scope + read-only + (for path tools) sandbox. */
+export interface CommandPolicy { command_allowlist?: string[]; approval_mode?: 'auto' | 'approval-required'; }
+
+export function assertCommandPolicy(policy: CommandPolicy, command: string, approved = false): void {
+  if (policy.approval_mode === 'approval-required' && !approved) throw new ScopeError('run_command', 'approval is required for command execution');
+  const list = policy.command_allowlist || [];
+  if (list.length) {
+    const executable = command.trim().split(/\s+/)[0]?.replace(/^.*[\\/]/, '') || '';
+    if (!list.includes(executable) && !list.includes(command.trim())) throw new ScopeError('run_command', `command is not in the allowlist (${list.join(', ')})`);
+  }
+}
+
 export function assertToolPermitted(
   opts: { tool: string; scopes: string[]; readOnly: boolean; policy?: PolicyConfig; target?: string },
 ): void {

@@ -20,6 +20,9 @@ export interface TokenRecord {
   shell_enabled: boolean;
   allowed_paths: string[];
   denied_paths: string[];
+  role?: 'auditor' | 'developer' | 'deployer' | 'admin';
+  command_allowlist?: string[];
+  approval_mode?: 'auto' | 'approval-required';
 }
 
 export interface RamcpConfig {
@@ -39,6 +42,7 @@ export interface RamcpConfig {
   audit: { enabled: boolean; db_path: string };
   read_only: boolean;             // global kill-switch for mutating tools
   tokens: TokenRecord[];
+  roles?: Record<string, { scopes: string[]; read_only?: boolean; shell_enabled?: boolean; command_allowlist?: string[]; approval_mode?: 'auto' | 'approval-required' }>;
   /** @deprecated v1 fields — migrated into tokens[0] */
   shell_enabled?: boolean;
   allowed_paths?: string[];
@@ -198,6 +202,9 @@ export function newTokenRecord(partial: Partial<TokenRecord> & { name: string })
     shell_enabled: partial.shell_enabled ?? false,
     allowed_paths: partial.allowed_paths || [],
     denied_paths: partial.denied_paths || [],
+    role: partial.role,
+    command_allowlist: partial.command_allowlist,
+    approval_mode: partial.approval_mode,
   };
 }
 

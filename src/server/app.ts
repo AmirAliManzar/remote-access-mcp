@@ -175,6 +175,9 @@ export function buildApp(state?: GatewayState): { app: express.Express; cfg: Ram
    * policy edits (CLI or in-chat) take effect on the next server build.
    */
   async function buildServerFor(token: TokenRecord): Promise<McpServer> {
+    const roleDefaults = gw.cfg.roles?.[token.role || ''] || (token.role === 'auditor' ? { scopes: ['system','logs','project','security','diagnostics','monitoring'], read_only: true } : token.role === 'developer' ? { scopes: ['filesystem','shell','git','project','jobs','transfer','planning','diagnostics'] } : token.role === 'deployer' ? { scopes: ['filesystem','shell','git','jobs','transfer','planning','services','packages','diagnostics','monitoring'] } : token.role === 'admin' ? { scopes: [] } : undefined);
+    const effectiveScopes = roleDefaults ? (roleDefaults.scopes.length ? (token.scopes.length ? token.scopes.filter(s => roleDefaults.scopes.includes(s)) : roleDefaults.scopes) : token.scopes) : token.scopes;
+    const effectiveToken: TokenRecord = roleDefaults ? { ...token, scopes: effectiveScopes, read_only: token.read_only || roleDefaults.read_only, shell_enabled: token.shell_enabled || Boolean(roleDefaults.shell_enabled), command_allowlist: token.command_allowlist || roleDefaults.command_allowlist, approval_mode: token.approval_mode || roleDefaults.approval_mode } : token;
     const server = new McpServer(
       { name: PKG.name, version: PKG.version },
       { capabilities: { tools: { listChanged: true } } },
@@ -182,8 +185,8 @@ export function buildApp(state?: GatewayState): { app: express.Express; cfg: Ram
 
     const ctx: ToolContext = {
       cfg: gw.cfg,
-      token,
-      readOnly: Boolean(gw.cfg.read_only || token.read_only),
+      token: effectiveToken,
+      readOnly: Boolean(gw.cfg.read_only || effectiveToken.read_only),
       persist: () => { /* config object is shared; saveConfig handles the file */ },
       audit: (tool, args, ok, isError, durationMs) => {
         if (!gw.audit) return;

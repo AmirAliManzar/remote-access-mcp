@@ -21,6 +21,24 @@ AI assistants are great, but they're sandboxed away from your infrastructure. Th
 
 The server binds to `127.0.0.1` only. You put it behind nginx (with Cloudflare or any TLS edge in front) and expose exactly one HTTPS endpoint to the world. Every request carries a token — as an `Authorization: Bearer` header or embedded in the URL path (`/<token>/mcp`) for clients like ChatGPT's connectors that can't set custom headers.
 
+## Parallel execution & background workers
+
+Remote Access MCP includes a bounded local worker pool for long-running or parallel operations. Use `run_background` for asynchronous commands and `run_parallel` for multiple commands. Jobs have persistent metadata, output capture, cancellation, timeouts, retry limits, and per-token ownership.
+
+## Safe operations
+
+- Binary-safe `upload_file` / `download_file` with size limits and SHA-256 verification.
+- Approval-required shell mode and command allowlists.
+- Transaction-style change sets with backup and rollback.
+- Token roles: `auditor`, `developer`, `deployer`, `admin`.
+
+## Diagnostics & extensibility
+
+- Structured system/service diagnostics and health watchers with webhook alerts.
+- MySQL/PostgreSQL/Redis query and schema tools using credentials held in environment variables.
+- MCP Resources and Prompts for operational context.
+- Trusted local plugin manifests and lifecycle management.
+
 ## Install
 
 ### Any machine with Node.js 18+ — Linux, macOS, or Windows
@@ -100,6 +118,8 @@ launchd on macOS, systemd on Linux for the autostart service.
 
 ### `token add` options
 
+Role and shell controls can be combined with `--role auditor|developer|deployer|admin`, `--commands git,npm` and `--approval required|auto`. Roles act as permission ceilings; explicit token scopes can further restrict a role.
+
 ```bash
 ramcp token add --name chatgpt \
   --paths /srv/app \        # allowed directories (symlink-safe)
@@ -131,7 +151,7 @@ Get it ready-made: `ramcp url`
 
 Endpoint `https://your-domain.com/mcp` + header `Authorization: Bearer <token>`
 
-## Tools (45 built-in tools across 16 suites)
+## Tools (45+ built-in operational tools, plus jobs, transfers, diagnostics, database, monitoring, change sets, resources, prompts and plugins)
 
 The built-in tool count is stable. Optional MCP integrations can add additional namespaced tools when their upstream packages are available.
 

@@ -15,6 +15,24 @@ npm install -g remote-access-mcp
 ramcp init
 ```
 
+## اجرای موازی، Worker و Background Job
+
+این نسخه یک Worker Pool محدودشده برای اجرای کارهای طولانی و موازی دارد. از `run_background` برای اجرای غیرهمزمان و از `run_parallel` برای چند کار موازی استفاده کنید. هر Job شناسه، وضعیت، خروجی، لغو، Timeout و محدودیت تلاش مجدد دارد و مالکیت آن به Token متصل است.
+
+## عملیات امن جدید
+
+- انتقال فایل باینری با `upload_file` و `download_file`، محدودیت حجم و SHA-256.
+- حالت نیازمند تأیید برای Shell و Command Allowlist.
+- Change Set تراکنشی با Backup و Rollback.
+- Roleهای `auditor`، `developer`، `deployer` و `admin`.
+
+## تشخیص و توسعه‌پذیری
+
+- System/Service Diagnostics و Health Watch با Webhook.
+- Query/Schema برای MySQL، PostgreSQL و Redis با Credential از Environment.
+- MCP Resources و Prompts.
+- Pluginهای محلی مورد اعتماد با Manifest و مدیریت نصب/حذف.
+
 ## نصب
 
 هستهٔ پروژه با Node.js 18 و بالاتر اجرا می‌شود و روی لینوکس، macOS و ویندوز طراحی شده است. بعضی یکپارچه‌سازی‌های اختیاری ممکن است به نسخهٔ بالاتری از Node.js نیاز داشته باشند؛ در این حالت هسته بدون آن یکپارچه‌سازی همچنان اجرا می‌شود.

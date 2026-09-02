@@ -105,6 +105,28 @@ Snapshot/rollback are in `MUTATING_TOOLS`.
 `list_allowed_paths` · `allow_path` · `deny_path` · `shell_enabled`. Mutations
 persist via `saveConfig` and hot-reload; they cannot touch other tokens.
 
+## New operational tools
+
+### Jobs / workers
+- `run_background` — asynchronous shell execution through a bounded worker pool
+- `run_parallel` — queue multiple commands for bounded parallel execution
+- `job_status` / `job_output` / `job_list` / `job_cancel` — inspect and control jobs
+
+### Transfers / safety
+- `upload_file` / `download_file` — binary-safe transfer with SHA-256
+- `approval_decide` — approve or reject sensitive shell operations
+- `change_set_begin` / `change_set_add` / `change_set_status` / `change_set_commit` / `change_set_rollback`
+
+### Diagnostics / data
+- `system_diagnostics` / `diagnose_service`
+- `health_watch` / `health_status` / `health_stop`
+- `database_query` / `database_schema`
+
+### MCP context / extensibility
+- Resources: system, services, network, projects and audit
+- Prompts: diagnose, deploy, security audit and project inspection
+- `plugin_list` / `plugin_install` / `plugin_remove`
+
 ## CLI (`ramcp`)
 
 | Command | Subcommands / flags | Notes |
