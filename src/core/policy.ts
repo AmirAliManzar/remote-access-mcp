@@ -137,12 +137,53 @@ export function scopeOf(tool: string): string | null {
 /** Full gate: scope + read-only + (for path tools) sandbox. */
 export interface CommandPolicy { command_allowlist?: string[]; approval_mode?: 'auto' | 'approval-required'; }
 
+/**
+ * Return every executable token represented by a shell command.
+ * The allowlist is executable-oriented, so shell control operators,
+ * substitutions and chained commands are rejected rather than attempting
+ * to parse an entire shell language imperfectly.
+ */
+function commandHasShellOperators(command: string): boolean {
+  let quote: string | null = null;
+  let escaped = false;
+  for (let i = 0; i < command.length; i++) {
+    const ch = command[i];
+    if (escaped) { escaped = false; continue; }
+    if (ch === '\\' && quote !== "'") { escaped = true; continue; }
+    if (quote) { if (ch === quote) quote = null; continue; }
+    if (ch === "'" || ch === '"') { quote = ch; continue; }
+    if (ch === ';' || ch === '|' || ch === '`' || ch === '$' || ch === '<' || ch === '>' || ch === '\n' || ch === '\r') return true;
+    if (ch === '&') return true;
+  }
+  return false;
+}
+
+function commandExecutable(command: string): string {
+  const trimmed = command.trim();
+  if (!trimmed) return '';
+  // A command with shell syntax is intentionally handled by the caller.
+  // For simple commands, the first whitespace-delimited token is the executable.
+  return trimmed.split(/\s+/)[0]?.replace(/^.*[\\/]/, '') || '';
+}
+
 export function assertCommandPolicy(policy: CommandPolicy, command: string, approved = false): void {
-  if (policy.approval_mode === 'approval-required' && !approved) throw new ScopeError('run_command', 'approval is required for command execution');
+  if (policy.approval_mode === 'approval-required' && !approved) {
+    throw new ScopeError('run_command', 'approval is required for command execution');
+  }
+  const trimmed = command.trim();
+  if (!trimmed) throw new ScopeError('run_command', 'command must not be empty');
   const list = policy.command_allowlist || [];
-  if (list.length) {
-    const executable = command.trim().split(/\s+/)[0]?.replace(/^.*[\\/]/, '') || '';
-    if (!list.includes(executable) && !list.includes(command.trim())) throw new ScopeError('run_command', `command is not in the allowlist (${list.join(', ')})`);
+  if (!list.length) return;
+
+  // Exact command entries remain supported. Otherwise the command must be a
+  // single simple invocation whose executable is explicitly allowlisted.
+  if (list.includes(trimmed)) return;
+  if (commandHasShellOperators(trimmed)) {
+    throw new ScopeError('run_command', 'shell operators are not allowed when a command allowlist is active; allow the exact command instead');
+  }
+  const executable = commandExecutable(trimmed);
+  if (!list.includes(executable)) {
+    throw new ScopeError('run_command', `command is not in the allowlist (${list.join(', ')})`);
   }
 }
 

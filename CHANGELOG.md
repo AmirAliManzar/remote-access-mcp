@@ -1,5 +1,22 @@
 # Changelog
 
+## 3.1.1 - Security & Reliability Hardening
+
+### Fixed
+- Hardened command allowlists against shell chaining, redirection, substitution and other operator-based bypasses.
+- Removed production dependency audit findings by pinning the vulnerable `qs` transitive dependency through an npm override.
+- Hardened managed filesystem change sets with pre-mutation capture, create/delete tracking and resumable rollback.
+- Made background job persistence safe across concurrent gateway processes with locking, merged writes and live-owner protection.
+- Made shell approvals durable across restarts and bound them to the exact command and working directory.
+- Approvals are now atomically single-use and record the approving token fingerprint.
+- Required explicit `trusted: true` for local plugins and prevented plugin entrypoints from escaping their plugin directory.
+- Implemented the `ramcp://audit` resource instead of returning a placeholder.
+
+### Security notes
+- Plugins remain an explicitly trusted in-process extension mechanism; they are not a sandbox.
+- Health watchers persist their configuration and recover after gateway restart; a single live gateway process owns each watcher, and they remain application-level timers rather than OS services.
+
+
 ## 3.1.0 - Parallel Workers & Agent Operations
 
 ### Added

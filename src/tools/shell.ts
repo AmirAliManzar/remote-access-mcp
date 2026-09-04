@@ -4,7 +4,7 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { assertToolPermitted, assertCommandPolicy } from '../core/policy.js';
 import { AuditLog } from '../core/audit.js';
-import { requestApproval, getApproval, decideApproval } from '../core/approvals.js';
+import { requestApproval, getApproval, decideApproval, consumeApproval } from '../core/approvals.js';
 import { shellCommand, childEnv, isWindows } from '../core/platform.js';
 import type { ToolContext } from '../core/context.js';
 
@@ -38,9 +38,14 @@ export function registerShellTools(server: McpServer, ctx: ToolContext): void {
       assertToolPermitted({ tool: 'run_command', scopes: ctx.token.scopes, readOnly: ctx.readOnly, policy: policy(), target: cwd });
       const tokenId = AuditLog.fingerprint(ctx.token.token);
       const approval = approval_id ? getApproval(approval_id, tokenId) : undefined;
-      if (ctx.token.approval_mode === 'approval-required' && approval?.status !== 'approved') {
-        const pending = requestApproval(tokenId, command, cwd);
-        return { content: [{ type: 'text', text: `Approval required. Ask an authorized operator to approve approval_id=${pending.id}, then retry with approval_id.` }], isError: true };
+      if (ctx.token.approval_mode === 'approval-required') {
+        if (!approval || approval.status !== 'approved' || approval.command !== command || approval.cwd !== cwd) {
+          const pending = requestApproval(tokenId, command, cwd);
+          return { content: [{ type: 'text', text: `Approval required. Ask an authorized operator to approve approval_id=${pending.id}, then retry with approval_id.` }], isError: true };
+        }
+        if (!consumeApproval(approval.id, tokenId, command, cwd)) {
+          return { content: [{ type: 'text', text: 'Approval is invalid, already consumed, or does not match this exact command/cwd.' }], isError: true };
+        }
       }
       assertCommandPolicy({ command_allowlist: ctx.token.command_allowlist, approval_mode: 'auto' }, command, true);
       const timeout = Math.min(timeout_ms, 600_000);
@@ -73,10 +78,12 @@ export function registerShellTools(server: McpServer, ctx: ToolContext): void {
     inputSchema: { id: z.string(), approved: z.boolean() },
   }, async ({ id, approved }) => {
     assertToolPermitted({ tool: 'approval_decide', scopes: ctx.token.scopes, readOnly: ctx.readOnly });
-    const requesterId = AuditLog.fingerprint(ctx.token.token);
-    const a = getApproval(id, ctx.token.role === 'admin' || ctx.token.role === 'deployer' ? undefined : requesterId);
+    const actorId = AuditLog.fingerprint(ctx.token.token);
+    const privileged = ctx.token.role === 'admin' || ctx.token.role === 'deployer';
+    const requesterId = privileged ? undefined : actorId;
+    const a = getApproval(id, requesterId);
     if (!a) return { content: [{ type: 'text', text: 'Approval not found or not authorized.' }], isError: true };
-    decideApproval(id, ctx.token.role === 'admin' || ctx.token.role === 'deployer' ? undefined : requesterId, approved);
+    decideApproval(id, requesterId, approved, actorId);
     return { content: [{ type: 'text', text: `Approval ${id}: ${approved ? 'approved' : 'rejected'}.` }] };
   });
 

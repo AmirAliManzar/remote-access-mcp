@@ -115,10 +115,11 @@ persist via `saveConfig` and hot-reload; they cannot touch other tokens.
 ### Transfers / safety
 - `upload_file` / `download_file` — binary-safe transfer with SHA-256
 - `approval_decide` — approve or reject sensitive shell operations
-- `change_set_begin` / `change_set_add` / `change_set_status` / `change_set_commit` / `change_set_rollback`
+- `change_set_begin` / `change_set_add` / `change_set_status` / `change_set_commit` / `change_set_rollback` — managed filesystem change sets; pass `change_set_id` to `write_file`, `edit_file`, and `delete_path` to capture mutations automatically. Rollback tracks missing paths (created later), restores deleted/modified paths, and can resume after partial failure.
 
 ### Diagnostics / data
 - `system_diagnostics` / `diagnose_service`
+- `health_watch` / `health_status` / `health_stop` — persistent application-level watchers with single-process ownership and restart recovery.
 - `health_watch` / `health_status` / `health_stop`
 - `database_query` / `database_schema`
 
@@ -172,3 +173,12 @@ persist via `saveConfig` and hot-reload; they cannot touch other tokens.
 Env overrides (tests, minimal deploys): `RAMCP_TOKEN RAMCP_HOST RAMCP_PORT
 RAMCP_PUBLIC_HOST RAMCP_SHELL RAMCP_ALLOWED_PATHS RAMCP_DENIED_PATHS`
 (legacy `DANA_*` still honored). `SSH_BIN` existed for fleet tests — gone.
+
+
+### Approvals
+
+Shell approvals are persisted under the data directory, survive gateway restarts, are bound to the exact command and working directory, record the approving token fingerprint, and are atomically consumed after one execution. An approval cannot be reused for another command.
+
+### Plugins
+
+Installed plugins must explicitly set `trusted: true`. Plugin entrypoints are constrained to remain inside their own plugin directory. Plugins are intentionally a trusted in-process extension point, not a security sandbox; do not install untrusted code.

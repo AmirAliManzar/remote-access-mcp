@@ -29,15 +29,15 @@ Remote Access MCP includes a bounded local worker pool for long-running or paral
 
 - Binary-safe `upload_file` / `download_file` with size limits and SHA-256 verification.
 - Approval-required shell mode and command allowlists.
-- Transaction-style change sets with backup and rollback.
+- Managed filesystem change sets with durable pre-mutation capture, create/delete tracking, resumable rollback, and atomic per-path restore.
 - Token roles: `auditor`, `developer`, `deployer`, `admin`.
 
 ## Diagnostics & extensibility
 
-- Structured system/service diagnostics and health watchers with webhook alerts.
+- Structured system/service diagnostics and persistent health watchers with webhook alerts.
 - MySQL/PostgreSQL/Redis query and schema tools using credentials held in environment variables.
 - MCP Resources and Prompts for operational context.
-- Trusted local plugin manifests and lifecycle management.
+- Trusted local plugin manifests and lifecycle management; plugins must explicitly declare `trusted: true` and execute in-process, so only install code you trust.
 
 ## Install
 
@@ -214,7 +214,7 @@ ramcp config import backup.json --merge   # union: keeps local identity, adds ne
 - **Per-token scopes + read-only + rate limit + expiry.** Least privilege by construction.
 - **SSRF guards** on all outbound fetch tools — the AI can't reach your metadata endpoints or internal services.
 - **Injection guards.** git verbs whitelisted, SQL single-statement, ATTACH blocked, unit names validated.
-- **Tamper-evident audit.** Every tool invocation → SQLite with a hash chain; `ramcp audit --verify` detects deletions/edits. Secrets in arguments are redacted before storage.
+- **Tamper-evident audit.** Every tool invocation → append-only JSONL with a hash chain; `ramcp audit --verify` detects deletions/edits. Secrets in arguments are redacted before storage.
 - **Hot-reload.** Policy edits apply on the next request — no restart, no downtime.
 - **Global read-only** kill-switch: `ramcp policy readonly on`.
 

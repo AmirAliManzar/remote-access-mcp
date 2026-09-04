@@ -112,3 +112,10 @@ pass them as `target:` to the gate; (4) think about injection (quotes,
 metacharacters, second-order effects) and add a guard, not a regex hope;
 (5) never log secrets; the audit wrapper redacts args but your *output* is
 on you.
+
+
+## Approval security
+
+Approval records are durable and protected by a filesystem lock. A granted approval is cryptographically unrelated to the shell command, so the implementation binds the approval to the exact command and working directory and atomically marks it consumed before execution. This prevents approval replay and command substitution.
+
+Plugins are a trusted in-process extension mechanism. Entrypoints cannot escape their plugin directory, but JavaScript executed by an installed trusted plugin has the gateway process privileges; plugin installation is therefore an administrative trust boundary, not a sandbox.

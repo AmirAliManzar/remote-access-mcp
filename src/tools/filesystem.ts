@@ -4,6 +4,7 @@ import path from 'node:path';
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { assertToolPermitted, assertAllowed, PolicyError } from '../core/policy.js';
+import { captureChange } from './changes.js';
 import type { ToolContext } from '../core/context.js';
 
 export function registerFilesystemTools(server: McpServer, ctx: ToolContext): void {
@@ -59,12 +60,14 @@ export function registerFilesystemTools(server: McpServer, ctx: ToolContext): vo
       description: 'Create or overwrite a file with UTF-8 text content. Policy-checked.',
       inputSchema: {
         path: z.string().describe('File path'),
+        change_set_id: z.string().optional().describe('Open change set to capture the pre-mutation state'),
         content: z.string().describe('Full file content'),
         mkdir: z.boolean().optional().default(true).describe('Create parent directories'),
       },
     },
-    async ({ path: file, content, mkdir }) => {
+    async ({ path: file, content, mkdir, change_set_id }) => {
       perm('write_file', file);
+      await captureChange(ctx, change_set_id, file);
       if (mkdir) await fsp.mkdir(path.dirname(file), { recursive: true });
       await fsp.writeFile(file, content, 'utf8');
       return { content: [{ type: 'text', text: `Wrote ${Buffer.byteLength(content)} bytes to ${file}` }] };
@@ -78,15 +81,17 @@ export function registerFilesystemTools(server: McpServer, ctx: ToolContext): vo
         path: z.string().describe('File path'),
         old_text: z.string().describe('Exact text to find'),
         new_text: z.string().describe('Replacement text'),
+        change_set_id: z.string().optional().describe('Open change set to capture the pre-mutation state'),
         all: z.boolean().optional().default(false).describe('Replace every occurrence'),
       },
     },
-    async ({ path: file, old_text, new_text, all }) => {
+    async ({ path: file, old_text, new_text, all, change_set_id }) => {
       perm('edit_file', file);
       const data = await fsp.readFile(file, 'utf8');
       if (!data.includes(old_text)) {
         return { content: [{ type: 'text', text: `old_text not found in ${file}` }], isError: true };
       }
+      await captureChange(ctx, change_set_id, file);
       const updated = all ? data.split(old_text).join(new_text) : data.replace(old_text, new_text);
       await fsp.writeFile(file, updated, 'utf8');
       return { content: [{ type: 'text', text: `Edited ${file}` }] };
@@ -96,10 +101,11 @@ export function registerFilesystemTools(server: McpServer, ctx: ToolContext): vo
   server.registerTool('delete_path',
     {
       description: 'Delete a file or a directory tree. Policy-checked locally. Destructive.',
-      inputSchema: { path: z.string().describe('Path to delete') },
+      inputSchema: { path: z.string().describe('Path to delete'), change_set_id: z.string().optional().describe('Open change set to capture the pre-mutation state') },
     },
-    async ({ path: target }) => {
+    async ({ path: target, change_set_id }) => {
       perm('delete_path', target);
+      await captureChange(ctx, change_set_id, target);
       const st = fs.lstatSync(target);
       if (st.isDirectory()) {
         await fsp.rm(target, { recursive: true });
