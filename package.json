@@ -58,7 +58,7 @@
   "homepage": "https://github.com/AmirAliManzar/remote-access-mcp#readme",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.20.0",
-    "better-sqlite3": "^11.6.0",
+    "better-sqlite3": "^13.0.3",
     "express": "^4.21.0",
     "zod": "^3.24.0"
   },
