@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.1.2 - Critical Packaging Fix
+
+### Fixed
+- **`ramcp` / `remote-access-mcp` commands were broken in published 3.1.0 and 3.1.1**: the `bin` entries pointed at `dist/cli.js`, which stopped being generated when the duplicate `src/cli.ts` entry was removed. Bin entries now point at the real entry `dist/main.js`.
+- CI's smoke test had been failing on this since 3.0.2 — the release workflow (which lacks the smoke step) kept publishing broken tarballs.
+
 ## 3.1.1 - Security & Reliability Hardening
 
 ### Fixed

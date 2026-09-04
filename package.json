@@ -1,11 +1,11 @@
 {
   "name": "remote-access-mcp",
-  "version": "3.1.1",
+  "version": "3.1.2",
   "description": "Turn any machine into a secure AI-agent-accessible endpoint via MCP. Connect ChatGPT, Claude, Grok, and other MCP clients to files, shell, git, services, and more.",
   "type": "module",
   "bin": {
-    "remote-access-mcp": "dist/cli.js",
-    "ramcp": "dist/cli.js"
+    "remote-access-mcp": "dist/main.js",
+    "ramcp": "dist/main.js"
   },
   "files": [
     "dist",
