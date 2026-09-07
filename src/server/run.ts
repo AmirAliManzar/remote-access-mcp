@@ -10,6 +10,8 @@ import { startScheduler } from '../tools/schedule.js';
 import { shellCommand, childEnv, platformLabel, writeRuntimeState, clearRuntimeState, dataDir } from '../core/platform.js';
 import { startQuickTunnel, type TunnelHandle } from '../core/tunnel.js';
 import { jobManager } from '../core/jobs.js';
+import { AuditLog } from '../core/audit.js';
+import { startAutomationEngine } from '../core/automation-engine.js';
 
 const exec = promisify(execFile);
 const PKG_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -30,7 +32,7 @@ export async function runServer(opts: {
   const port = opts.port || cfg.port;
   if (opts.readOnly) cfg.read_only = true;
 
-  const { app } = buildApp();
+  const { app, state } = buildApp();
 
   // Scheduled-task ticker: runs commands with the platform's shell.
   const scheduler = startScheduler(async (task) => {
@@ -43,6 +45,16 @@ export async function runServer(opts: {
     }
   });
   scheduler.unref();
+
+  const automation = startAutomationEngine(async (rule, action) => {
+    console.log(`[automation] ${rule.id}: ${action.tool}`);
+    const owner = cfg.tokens.find(t => AuditLog.fingerprint(t.token) === rule.tokenFingerprint);
+    if (!owner) throw new Error('Automation owner token no longer exists');
+    if (cfg.read_only || owner.read_only) throw new Error('Automation blocked by read-only policy');
+    if (!state.automationInvoke) throw new Error('Automation executor is unavailable');
+    await state.automationInvoke(owner, action.tool, action.args, 1);
+  }, cfg);
+  automation.unref();
 
   const httpServer = createServer(app);
   let tunnel: TunnelHandle | null = null;

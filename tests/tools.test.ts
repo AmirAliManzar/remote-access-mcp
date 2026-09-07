@@ -72,7 +72,7 @@ describe('tools over MCP', () => {
     expect(r.status).toBe(200);
     const msg = parseSse(r.body);
     const names = msg.result.tools.map((t: any) => t.name);
-    for (const expected of ['system_info', 'read_file', 'write_file', 'run_command', 'http_request', 'git', 'sqlite_query', 'allow_path']) {
+    for (const expected of ['system_info', 'read_file', 'write_file', 'run_command', 'http_request', 'git', 'sqlite_query', 'allow_path', 'context_stats', 'context_memory', 'context_snapshot', 'context_diff', 'context_budget', 'context_clear']) {
       expect(names).toContain(expected);
     }
   });
@@ -82,6 +82,68 @@ describe('tools over MCP', () => {
     expect(r.status).toBe(200);
     const msg = parseSse(r.body);
     expect(msg.result.content[0].text).toContain('hostname:');
+  });
+
+  it('uses token-isolated context memory and reports cache activity', async () => {
+    const first = await rpc('tools/call', { name: 'system_info', arguments: {} });
+    expect(parseSse(first.body).result.content[0].text).toContain('hostname:');
+    const second = await rpc('tools/call', { name: 'system_info', arguments: {} });
+    expect(parseSse(second.body).result.content[0].text).toContain('hostname:');
+    const stats = parseSse((await rpc('tools/call', { name: 'context_stats', arguments: {} })).body);
+    expect(stats.result.content[0].text).toContain('cacheHits');
+    expect(JSON.parse(stats.result.content[0].text).cacheHits).toBeGreaterThanOrEqual(1);
+    const memory = parseSse((await rpc('tools/call', { name: 'context_memory', arguments: { limit: 4 } })).body);
+    expect(JSON.parse(memory.result.content[0].text).length).toBeGreaterThan(0);
+  });
+
+
+  it('reduces tools/list for scoped tokens while retaining capability discovery', async () => {
+    const previousExposure = process.env.RAMCP_TOOL_EXPOSURE;
+    process.env.RAMCP_TOOL_EXPOSURE = 'scoped';
+    const { createGatewayState } = await import('../src/server/app.js');
+    const state = createGatewayState();
+    state.cfg = {
+      host: '127.0.0.1', port: 0, public_host: '', mcp_path: '/mcp', log_level: 'silent',
+      audit: { enabled: false, db_path: '/dev/null' }, read_only: false,
+      tokens: [{ id: 'scoped', name: 'scoped', token: 'scoped-token-tools', created: new Date().toISOString(), scopes: ['filesystem'], shell_enabled: false, allowed_paths: [], denied_paths: [] }],
+    };
+    state.audit = null;
+    const { app } = buildApp(state);
+    const local = http.createServer(app);
+    await new Promise<void>(r => local.listen(0, '127.0.0.1', r));
+    try {
+      const port = (local.address() as { port: number }).port;
+      const res = await fetch(`http://127.0.0.1:${port}/scoped-token-tools/mcp`, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' }, body: JSON.stringify({ jsonrpc: '2.0', id: 99, method: 'tools/list', params: {} }) });
+      const msg = parseSse(await res.text());
+      const names = msg.result.tools.map((t: any) => t.name);
+      expect(names).toContain('read_file');
+      expect(names).toContain('capability_discover');
+      expect(names).toContain('capability_batch');
+      expect(names).not.toContain('run_command');
+      expect(names).not.toContain('package_install');
+    } finally {
+      if (previousExposure === undefined) delete process.env.RAMCP_TOOL_EXPOSURE; else process.env.RAMCP_TOOL_EXPOSURE = previousExposure;
+      await new Promise<void>(r => local.close(() => r()));
+    }
+  });
+
+  it('batches independent read-only calls and rejects mutation', async () => {
+    const batch = await rpc('tools/call', {
+      name: 'capability_batch',
+      arguments: { calls: [{ name: 'system_info', arguments: {} }, { name: 'system_resource', arguments: {} }] },
+    });
+    const batchMsg = parseSse(batch.body);
+    expect(batchMsg.result.isError).not.toBe(true);
+    const payload = JSON.parse(batchMsg.result.content[0].text);
+    expect(payload.results).toHaveLength(2);
+    expect(payload.results.every((x: any) => x.ok)).toBe(true);
+
+    const denied = await rpc('tools/call', {
+      name: 'capability_batch',
+      arguments: { calls: [{ name: 'run_command', arguments: { command: 'echo blocked' } }] },
+    });
+    expect(parseSse(denied.body).result.isError).toBe(true);
+    expect(parseSse(denied.body).result.content[0].text).toContain('read-only calls only');
   });
 
   it('refuses filesystem access when policy is empty', async () => {

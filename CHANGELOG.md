@@ -1,5 +1,26 @@
 # Changelog
 
+## 4.0.0 - Final Hardening
+
+### Security & Reliability
+- Hardened plugin registry mutations with a cross-process lock and atomic lockfile replacement.
+- Plugin installation now cleans up partial destinations on failure and revalidates the copied manifest before fingerprinting.
+- Final release verification covers build, type checking, the complete regression suite, dependency audit, diff hygiene, production boot, Codebase Memory isolation, plugin sandbox behavior, tamper detection, and concurrent plugin installation.
+- No automatic publishing or registry distribution is performed by the release process.
+
+## 3.9.0 - Plugin Isolation & Ecosystem
+
+### Added
+- Out-of-process MCP plugin hosting with short-lived child processes.
+- Plugin manifest validation, SHA-256 installation fingerprints and fail-closed integrity verification.
+- Namespaced plugin tools (`plugin_<name>__<tool>`) with token-scope and read-only gates.
+- Node filesystem permission isolation, dedicated plugin `data/` write area, optional child-process permission, Linux network namespace isolation and deny-by-default network controls.
+- Bounded plugin startup/execution time and explicit `RAMCP_PLUGIN_UNSANDBOXED=1` escape hatch for operators who intentionally accept local-trust execution.
+
+### Changed
+- The old `trusted: true` in-process plugin model is no longer a security boundary and is not accepted by the installer.
+- There is no automatic remote plugin registry/download path; plugin installation remains local and explicit.
+
 ## 3.1.2 - Critical Packaging Fix
 
 ### Fixed

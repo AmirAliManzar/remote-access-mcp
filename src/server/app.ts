@@ -9,11 +9,15 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import { loadLiveConfig, resolveToken, configPath, type RamcpConfig, type TokenRecord } from '../core/config.js';
 import { ConfigWatcher, type ToolContext } from '../core/context.js';
+import { contextEngineForToken } from '../core/context-engine.js';
 import { AuditLog, redactArgs } from '../core/audit.js';
 import { RateLimiter } from '../core/rate-limit.js';
 import { tokensMatch } from '../core/crypto.js';
 import { registerAllTools } from '../tools/index.js';
 import { notifyWebhooks } from '../core/webhooks.js';
+import { dispatchAutomationEvent } from '../core/automation-engine.js';
+import { attemptRecoveryForFailure } from '../core/recovery-engine.js';
+import { decideAutonomy } from '../core/autonomy.js';
 import { startScheduler } from '../tools/schedule.js';
 import { SessionStore } from './sessions.js';
 import { LegacySseStore } from './legacy-sse.js';
@@ -29,6 +33,7 @@ export interface GatewayState {
   sessions: SessionStore;
   legacySse: LegacySseStore;
   reload(): void;
+  automationInvoke?: (token: TokenRecord, name: string, args: Record<string, unknown>, depth?: number) => Promise<any>;
 }
 
 export function createGatewayState(): GatewayState {
@@ -174,8 +179,8 @@ export function buildApp(state?: GatewayState): { app: express.Express; cfg: Ram
    * Build a fully-wired McpServer for one token. Tools are registered fresh so
    * policy edits (CLI or in-chat) take effect on the next server build.
    */
-  async function buildServerFor(token: TokenRecord): Promise<McpServer> {
-    const roleDefaults = gw.cfg.roles?.[token.role || ''] || (token.role === 'auditor' ? { scopes: ['system','logs','project','security','diagnostics','monitoring'], read_only: true } : token.role === 'developer' ? { scopes: ['filesystem','shell','git','project','jobs','transfer','planning','diagnostics'] } : token.role === 'deployer' ? { scopes: ['filesystem','shell','git','jobs','transfer','planning','services','packages','diagnostics','monitoring'] } : token.role === 'admin' ? { scopes: [] } : undefined);
+  async function buildServerFor(token: TokenRecord, automationDepth = 0, includeIntegrations = true): Promise<McpServer> {
+    const roleDefaults = gw.cfg.roles?.[token.role || ''] || (token.role === 'auditor' ? { scopes: ['system','logs','project','security','diagnostics','monitoring'], read_only: true } : token.role === 'developer' ? { scopes: ['filesystem','shell','git','project','jobs','transfer','planning','diagnostics','browser','infrastructure'] } : token.role === 'deployer' ? { scopes: ['filesystem','shell','git','jobs','transfer','planning','services','packages','diagnostics','monitoring','browser','infrastructure'] } : token.role === 'admin' ? { scopes: [] } : undefined);
     const effectiveScopes = roleDefaults ? (roleDefaults.scopes.length ? (token.scopes.length ? token.scopes.filter(s => roleDefaults.scopes.includes(s)) : roleDefaults.scopes) : token.scopes) : token.scopes;
     const effectiveToken: TokenRecord = roleDefaults ? { ...token, scopes: effectiveScopes, read_only: token.read_only || roleDefaults.read_only, shell_enabled: token.shell_enabled || Boolean(roleDefaults.shell_enabled), command_allowlist: token.command_allowlist || roleDefaults.command_allowlist, approval_mode: token.approval_mode || roleDefaults.approval_mode } : token;
     const server = new McpServer(
@@ -183,11 +188,21 @@ export function buildApp(state?: GatewayState): { app: express.Express; cfg: Ram
       { capabilities: { tools: { listChanged: true } } },
     );
 
+    const contextEngine = contextEngineForToken(token.token);
+    const toolHandlers = new Map<string, (args: any) => Promise<any>>();
+
     const ctx: ToolContext = {
       cfg: gw.cfg,
       token: effectiveToken,
       readOnly: Boolean(gw.cfg.read_only || effectiveToken.read_only),
       persist: () => { /* config object is shared; saveConfig handles the file */ },
+      contextEngine,
+      automationDepth,
+      invokeTool: async (name, args) => {
+        const handler = toolHandlers.get(name);
+        if (!handler) throw new Error(`Tool ${name} is not available to this token`);
+        return handler(args);
+      },
       audit: (tool, args, ok, isError, durationMs) => {
         if (!gw.audit) return;
         try {
@@ -212,24 +227,82 @@ export function buildApp(state?: GatewayState): { app: express.Express; cfg: Ram
         let result: any;
         let isError = false;
         try {
-          result = await handler(args);
-          isError = Boolean(result?.isError);
+          const cached = contextEngine.getCached(name, args || {});
+          if (cached !== undefined) {
+            result = cached;
+          } else {
+            result = await handler(args);
+            isError = Boolean(result?.isError);
+            if (!isError) contextEngine.putCached(name, args || {}, result);
+          }
         } catch (e: any) {
           isError = true;
           result = { content: [{ type: 'text', text: e?.message || 'tool error' }], isError: true };
         }
+        if (!isError) contextEngine.remember(name, args || {}, result);
+        result = contextEngine.compactResult(result);
         ctx.audit(name, args || {}, !isError, isError, Date.now() - started);
+        if (isError && ctx.automationDepth === 0 && process.env.RAMCP_AUTONOMOUS === '1') {
+          void attemptRecoveryForFailure(AuditLog.fingerprint(token.token), name, async (recoveryTool, recoveryArgs) => {
+            if (!ctx.invokeTool) throw new Error('recovery executor unavailable');
+            const previousDepth = ctx.automationDepth || 0;
+            ctx.automationDepth = previousDepth + 1;
+            try { return await ctx.invokeTool(recoveryTool, recoveryArgs); } finally { ctx.automationDepth = previousDepth; }
+          }, rule => decideAutonomy('autonomous', rule.risk, { enabled: true, allowAutonomousHighRisk: process.env.RAMCP_AUTONOMOUS_HIGH_RISK === '1', allowAutonomousCritical: process.env.RAMCP_AUTONOMOUS_CRITICAL === '1' }) === 'allow').catch(() => {});
+        }
         // Webhook notifications ride along with audit — fire-and-forget,
         // never part of the request path.
         try { notifyWebhooks(gw.cfg, { ts: Date.now(), token_fingerprint: AuditLog.fingerprint(token.token), tool: name, args_json: '', ok: !isError ? 1 : 0, is_error: isError ? 1 : 0, duration_ms: Date.now() - started }); } catch { /* advisory */ }
+        try {
+          const { dispatchAutomationEvent } = await import('../core/automation-engine.js');
+          void dispatchAutomationEvent({ type: isError ? 'tool.error' : 'tool.success', tool: name, tokenFingerprint: AuditLog.fingerprint(token.token), data: { is_error: isError, duration_ms: Date.now() - started }, ts: Date.now(), origin: ctx.automationDepth && ctx.automationDepth > 0 ? 'automation' : 'external', depth: ctx.automationDepth || 0 }, async (_rule, action) => {
+            const target = toolHandlers.get(action.tool);
+            if (!target) throw new Error(`Automation action tool ${action.tool} is unavailable`);
+            await target(action.args);
+          }, gw.cfg);
+        } catch { /* automation is advisory to the request path */ }
         return result;
       };
+      toolHandlers.set(name, wrapped);
       return origRegister(name, config, wrapped);
     };
 
-    await registerAllTools(server, ctx);
+    await registerAllTools(server, ctx, includeIntegrations);
+
+    // Automation executes through the exact same wrapped handlers used by MCP.
+    // A fresh server/context is built per automation action, so token policy,
+    // audit, context semantics, and tool-level checks remain the security boundary.
+    (server as any)._ramcpAutomationInvoke = async (name: string, args: Record<string, unknown>) => {
+      const handler = toolHandlers.get(name);
+      if (!handler) throw new Error(`Tool ${name} is not available to this token`);
+      return handler(args);
+    };
+    // Expose only tools authorized by this token. Empty scopes retain the
+    // historical all-tools behavior; scoped tokens get a much smaller tools/list.
+    // The two router tools remain visible so a scoped agent can discover and
+    // batch only capabilities it is actually authorized to use.
+    const registered = (server as any)._registeredTools as Record<string, { remove: () => void }> | undefined;
+    const toolExposure = process.env.RAMCP_TOOL_EXPOSURE === 'scoped' ? 'scoped' : 'all';
+    if (registered && effectiveToken.scopes.length > 0 && toolExposure === 'scoped') {
+      const { isToolAuthorized } = await import('../core/capability-router.js');
+      for (const [name, tool] of Object.entries(registered)) {
+        if (name === 'capability_discover' || name === 'capability_batch') continue;
+        if (!isToolAuthorized(name, effectiveToken.scopes)) tool.remove();
+      }
+    }
     return server;
   }
+
+  // Automation has its own executor entry point, but it still builds the
+  // normal tool stack and therefore cannot bypass policy/audit/read-only gates.
+  // External integrations are loaded only when the requested action actually
+  // needs one; ordinary automation must never block on an optional MCP child.
+  gw.automationInvoke = async (owner: TokenRecord, name: string, args: Record<string, unknown>, depth = 1) => {
+    if (depth > 2) throw new Error('Automation recursion depth exceeded');
+    const needsIntegration = name.startsWith('context7_') || name.startsWith('codebase_memory_');
+    const automationServer = await buildServerFor(owner, depth, needsIntegration);
+    return (automationServer as any)._ramcpAutomationInvoke(name, args);
+  };
 
   /**
    * Serves both client dialects:
@@ -363,6 +436,28 @@ export function buildApp(state?: GatewayState): { app: express.Express; cfg: Ram
   // Route paths may contain regex specials (e.g. /sse) — escape them.
   const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const bare = (p: string) => esc(p.replace(/^\//, ''));
+
+  // ---- automation webhook trigger ---------------------------------------------------
+  // Authenticated inbound event endpoint. The token is never included in the
+  // event payload; it is used only to select the owner's rules and policy.
+  const registerAutomationWebhookRoute = (): void => {
+    app.post('/:token/automation/webhook', async (req, res, next) => {
+      try {
+        const token = authenticate(req.params.token) || authenticate(tokenFromAuthHeader(req));
+        if (!token) return unauthorized(res);
+        if (rateLimited(token)) return res.status(429).json({ error: 'Too Many Requests' });
+        const body = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body as Record<string, unknown> : {};
+        if (JSON.stringify(body).length > 256 * 1024) return res.status(413).json({ error: 'Webhook payload too large' });
+        const eventType = typeof body.type === 'string' && body.type.length <= 100 ? body.type : 'webhook';
+        const data = (body.data && typeof body.data === 'object' && !Array.isArray(body.data)) ? body.data as Record<string, unknown> : body;
+        if (!gw.automationInvoke) return res.status(503).json({ error: 'Automation executor unavailable' });
+        await dispatchAutomationEvent({ type: eventType, data, tokenFingerprint: AuditLog.fingerprint(token.token), ts: Date.now(), origin: 'external', depth: 0 }, async (_rule, action) => { await gw.automationInvoke!(token, action.tool, action.args, 1); }, gw.cfg);
+        res.json({ accepted: true, event: eventType });
+      } catch (e) { next(e); }
+    });
+  };
+
+  registerAutomationWebhookRoute();
 
   const registerMcpRoutes = (mcpPath: string): void => {
     const clean = mcpPath.replace(/\/+$/, '');

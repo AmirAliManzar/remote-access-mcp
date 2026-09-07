@@ -1,0 +1,14 @@
+import { spawn } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ramcp-recovery-'));
+const worker = path.join(root, 'worker.mjs');
+fs.writeFileSync(worker, `import { createRecoveryRule } from '${path.resolve('dist/core/recovery-engine.js').replaceAll('\\\\','/')}' ;\nconst i=process.argv[2]; createRecoveryRule({tokenFingerprint:'stress',name:'r-'+i,failureType:'x',risk:'low',action:{tool:'x',args:{}},enabled:true,maxAttempts:1,cooldownSeconds:30});\n`);
+const ps = Array.from({length: 4}, (_,i) => new Promise((resolve,reject) => { const p=spawn(process.execPath,[worker,String(i)],{env:{...process.env,XDG_CONFIG_HOME:root}}); let e=''; p.stderr.on('data',d=>e+=d); p.on('exit',c=>c===0?resolve():reject(new Error(e||`exit ${c}`))); }));
+await Promise.all(ps);
+const store = path.join(root,'remote-access-mcp','recovery.json');
+const rows = JSON.parse(fs.readFileSync(store,'utf8')).rules;
+console.log(`recovery stress: ${rows.length}/4 persisted; valid JSON=${Array.isArray(rows)}`);
+fs.rmSync(root,{recursive:true,force:true});

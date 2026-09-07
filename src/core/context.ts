@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import type { RamcpConfig, TokenRecord } from './config.js';
+import type { ContextEngine } from './context-engine.js';
 
 /**
  * Hot-reload: re-reads config.json on every request when its mtime changed.
@@ -41,4 +42,8 @@ export interface ToolContext {
   readOnly: boolean;
   persist: () => void;   // save config after mutations
   audit: (tool: string, args: Record<string, unknown>, ok: boolean, isError: boolean, durationMs: number) => void;
+  contextEngine?: ContextEngine;
+  invokeTool?: (name: string, args: Record<string, unknown>) => Promise<any>;
+  /** Non-zero while an automation action is invoking another tool. */
+  automationDepth?: number;
 }

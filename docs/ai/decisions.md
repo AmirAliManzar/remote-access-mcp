@@ -138,4 +138,122 @@ call hangs until timeout (fleet's remote file writes hung 5s→timeout every
 time before this was understood; a minimal `bash -c cat` repro confirmed
 it's the API, not our code). Pattern: when stdin must be piped, use
 `spawn()` and end the stream manually. The helper shape lives in git
-history (core/fleet.ts) if ever needed again.
+history (core/fleet.ts) if ever needed again).
+
+---
+
+## ADR-014 — Durable task orchestration is layered over the existing tool gate
+**Status:** accepted · **Date:** 2026-09-07
+
+Phase 3 introduces `task` as an orchestration layer, not a second execution
+security model. Every action is still dispatched through the existing wrapped
+MCP tool handler, so token scopes, read-only mode, path policy, command
+allowlists, audit, context optimization, and plugin policy remain authoritative.
+
+Task state is persisted only under RAMCP's own `dataDir()` and is token-isolated.
+The workflow engine adds graph validation, bounded parallel action execution,
+retry/timeout, explicit verification hooks, supervised pause/resume, and
+compensation rollback. Specialized agent profiles are deterministic
+capability/autonomy constraints; they are not hidden model processes and do
+not touch external Codebase Memory state.
+
+---
+
+## ADR-015 — Browser and infrastructure integrations stay fixed-command and policy-first
+**Status:** accepted · **Date:** 2026-09-07
+
+Phase 5 adds headless browser access and infrastructure inspection without
+introducing arbitrary shell execution. Browser URLs are restricted to public
+HTTP(S) targets with the same private/metadata SSRF posture as web tools, and
+screenshots must pass the existing path policy. Docker and Kubernetes calls use
+fixed executables plus validated positional arguments rather than shell strings;
+mutating Docker actions remain subject to read-only policy. Cloudflare access is
+limited to the existing `cloudflared` binary and never exposes credentials.
+Existing MySQL/PostgreSQL/Redis adapters remain unchanged and authoritative.
+
+---
+
+## ADR-016 — Automation is durable, token-isolated, and policy-first
+**Status:** accepted · **Date:** 2026-09-07
+
+Phase 6 stores automation rules only in RAMCP's own data directory and keys
+ownership to the authenticated token fingerprint. Conditions are evaluated
+locally and actions are bounded to a small declarative list; automation cannot
+invoke control-plane, approval-decision, or plugin lifecycle tools. Mutating
+lifecycle operations and action execution remain behind the normal policy,
+scope, read-only, path, audit, and command-policy gates.
+
+Persistence uses a cross-process filesystem lock with atomic replacement, while
+rule execution uses an atomic per-rule claim so multiple gateway processes do
+not intentionally execute the same rule concurrently. Event chains carry an
+origin/depth guard and automation-origin tool events cannot recursively trigger
+more automation. The authenticated inbound webhook endpoint selects rules by
+token and never copies the token into the event payload. Optional integration
+MCP children are started only when an automation action actually requests one,
+so ordinary automation does not block on Codebase Memory/Context7 startup.
+
+Existing schedules, outbound webhooks, and health watchers remain compatible
+rather than being replaced. No external Codebase Memory state is read or
+modified by the automation persistence layer.
+
+---
+
+## ADR-017 — Autonomous operations are opt-in and risk-gated
+**Status:** accepted · **Date:** 2026-09-07
+
+Phase 7 introduces centralized autonomy decisions and bounded self-healing.
+Autonomous execution is disabled unless `RAMCP_AUTONOMOUS=1`; high-risk and
+critical recovery additionally require explicit `RAMCP_AUTONOMOUS_HIGH_RISK=1`
+and `RAMCP_AUTONOMOUS_CRITICAL=1`. Recovery rules are token-isolated,
+rate-limited, attempt-bounded, persisted atomically, and executed through the
+normal wrapped tool path. Automation/recovery recursion is not permitted.
+
+---
+
+## ADR-018 — Plugins are untrusted child processes, not in-process extensions
+**Status:** accepted · **Date:** 2026-09-07
+
+Phase 8 removes the previous in-process plugin execution model. An installed
+plugin is copied into RAMCP's own plugin directory, validated, fingerprinted,
+and only then exposed. The stored fingerprint must continue to match before
+every plugin process is started; modified or unverifiable plugins are skipped
+fail-closed.
+
+Plugin tools are discovered through a short-lived MCP child process and
+exposed to the gateway under a `plugin_<name>__<tool>` namespace. Each actual
+invocation starts a fresh child process, bounds startup/execution time, and
+closes the child after the call. This avoids persistent plugin processes and
+plugin lifecycle state surviving independently of the gateway session.
+
+On Linux, the child runs in a separate network namespace with a deny-by-default
+network filter when `unshare` and `nft` are available. Node's permission system
+limits filesystem reads to the plugin and required runtime dependencies,
+permits writes only to the plugin's dedicated `data/` directory when `fs.write`
+is explicitly declared, and permits child processes only when `process` is
+explicitly declared. A network-blocking preload adds defense-in-depth for
+common Node networking APIs. On platforms without the built-in sandbox,
+plugins are disabled by default; `RAMCP_PLUGIN_UNSANDBOXED=1` is an explicit
+local-trust escape hatch.
+
+Installation rejects absolute/traversing entries, invalid names/versions/
+permissions, symbolic links, oversized trees, and malformed manifests. Plugin
+lifecycle tools require the `plugins` scope and remain blocked in read-only
+mode. Plugin tool exposure also requires the plugin's declared gateway scopes
+to be available to the token. There is intentionally no remote registry or
+automatic download path in this phase; installation is local and explicit.
+
+The sandbox is defense-in-depth rather than a claim of a universal kernel-grade
+security boundary across every operating system. The default is fail-closed
+when the required Linux sandbox is unavailable.
+
+---
+
+## ADR-019 — Plugin registry mutations are serialized across gateway processes
+**Status:** accepted · **Date:** 2026-09-08
+
+Phase 9 adds a cross-process filesystem guard around plugin installation and
+removal. The registry lockfile is still replaced atomically, while failed
+installations remove their partial destination and revalidate the copied
+manifest before committing the integrity record. This preserves the simple
+local filesystem model without allowing concurrent gateway processes to
+produce competing plugin registry state.

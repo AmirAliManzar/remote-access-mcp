@@ -25,12 +25,21 @@ import { registerDatabaseTools } from './database.js';
 import { registerChangeTools } from './changes.js';
 import { registerResourcesAndPrompts } from './resources-prompts.js';
 import { registerPluginTools, registerInstalledPlugins } from './plugins.js';
+import { registerContextTools } from './context.js';
+import { registerRouterTools } from './router.js';
+import { registerTaskTools } from './tasks.js';
+import { registerAgentTools } from './agent.js';
+import { registerIntelligenceTools } from './intelligence.js';
+import { registerAutomationTools } from './automation.js';
+import { registerBrowserTools } from './browser.js';
+import { registerInfrastructureTools } from './infrastructure.js';
+import { registerAutonomousTools } from './autonomous.js';
 
 /**
  * Register every tool suite for this request's token context.
  * Fresh registration per request → policy mutations apply instantly.
  */
-export async function registerAllTools(server: McpServer, ctx: ToolContext): Promise<void> {
+export async function registerAllTools(server: McpServer, ctx: ToolContext, includeIntegrations = true): Promise<void> {
   registerSystemTools(server, ctx);
   registerFilesystemTools(server, ctx);
   registerShellTools(server, ctx);
@@ -54,13 +63,22 @@ export async function registerAllTools(server: McpServer, ctx: ToolContext): Pro
   registerDatabaseTools(server, ctx);
   registerChangeTools(server, ctx);
   registerResourcesAndPrompts(server, ctx);
+  registerContextTools(server, ctx);
+  registerRouterTools(server, ctx);
+  registerTaskTools(server, ctx);
+  registerAgentTools(server, ctx);
+  registerIntelligenceTools(server, ctx);
+  registerAutomationTools(server, ctx);
+  registerBrowserTools(server, ctx);
+  registerInfrastructureTools(server, ctx);
+  registerAutonomousTools(server, ctx);
   registerPluginTools(server, ctx);
   await registerInstalledPlugins(server, ctx);
 
   // Integration subprocesses are disabled in the unit-test environment so
   // core transport/auth tests stay deterministic. Production loads them
   // before the MCP transport connects, so the initial tools/list is complete.
-  if (process.env.NODE_ENV !== 'test' && !process.env.VITEST) {
+  if (includeIntegrations && process.env.NODE_ENV !== 'test' && !process.env.VITEST) {
     await registerIntegrationTools(server, ctx);
   }
 }

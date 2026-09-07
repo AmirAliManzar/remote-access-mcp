@@ -98,7 +98,7 @@ export function loadConfig(): RamcpConfig {
     // carry the audit log along, so upgrading never loses tokens.
     raw = JSON.parse(fs.readFileSync(LEGACY_FILE, 'utf8'));
     fs.mkdirSync(CONFIG_DIR, { recursive: true });
-    for (const f of ['audit.jsonl', 'schedule.json', 'plans.json', 'snapshots.json']) {
+    for (const f of ['audit.jsonl', 'schedule.json', 'plans.json', 'snapshots.json', 'automations.json', 'recovery.json']) {
       const from = path.join(legacyDataDir(), f);
       const to = path.join(CONFIG_DIR, f);
       if (fs.existsSync(from) && !fs.existsSync(to)) {

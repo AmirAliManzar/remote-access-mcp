@@ -37,7 +37,7 @@ Remote Access MCP includes a bounded local worker pool for long-running or paral
 - Structured system/service diagnostics and persistent health watchers with webhook alerts.
 - MySQL/PostgreSQL/Redis query and schema tools using credentials held in environment variables.
 - MCP Resources and Prompts for operational context.
-- Trusted local plugin manifests and lifecycle management; plugins must explicitly declare `trusted: true` and execute in-process, so only install code you trust.
+- Isolated local plugin lifecycle: manifests are validated and fingerprinted, plugin tools are namespaced, and installed plugins run out-of-process behind Node's filesystem permission model plus a Linux network sandbox. Plugin access requires the `plugins` scope; untrusted or unverifiable plugins are skipped fail-closed.
 
 ## Install
 
@@ -151,7 +151,7 @@ Get it ready-made: `ramcp url`
 
 Endpoint `https://your-domain.com/mcp` + header `Authorization: Bearer <token>`
 
-## Tools (45+ built-in operational tools, plus jobs, transfers, diagnostics, database, monitoring, change sets, resources, prompts and plugins)
+## Tools (101 built-in operational tools, plus optional integration tools)
 
 The built-in tool count is stable. Optional MCP integrations can add additional namespaced tools when their upstream packages are available.
 
@@ -184,6 +184,65 @@ The built-in tool count is stable. Optional MCP integrations can add additional 
 **Policy** (4) `list_allowed_paths` `allow_path` `deny_path` `shell_enabled` — each token manages only its own sandbox
 
 **Operations** (2) `environment_inspect` `nginx_inspect`
+
+**Browser** (3) `browser_open` `browser_extract` `browser_screenshot` — optional Playwright runtime; public-URL SSRF guard; screenshots must stay inside the token path sandbox
+
+**Infrastructure** (9) `infra_probe` `docker_ps` `docker_inspect` `docker_logs` `docker_action` `kubernetes_get` `kubernetes_describe` `kubernetes_logs` `cloudflare_status` — fixed executables and validated arguments; missing CLIs degrade cleanly
+
+**Database** (2) `database_query` `database_schema` — MySQL/PostgreSQL/Redis support already provided by the existing adapter
+
+## Automation & Events
+
+Automation rules are persistent, token-isolated workflows triggered by intervals or tool/webhook/file/health events. They support typed conditions, bounded action lists, manual triggering, enable/disable/delete lifecycle, execution counters, and webhook outcome notifications. Every action is executed through the normal token policy/read-only/audit wrapper; automation cannot invoke control-plane, approval, or plugin lifecycle tools. File triggers are constrained by the owner's path policy, payloads are bounded, and recursive automation chains are capped.
+
+For external events, an authenticated webhook can POST to `/<token>/automation/webhook` with a JSON body such as `{"type":"deploy.finished","data":{"service":"api"}}`. The token selects the owner's rules; the token is never copied into the event payload. Scheduler/file/health execution is persistent and protected by a cross-process execution claim so multiple gateway processes do not intentionally execute the same rule concurrently.
+
+## Security & Autonomous Operations
+
+Phase 7 adds `security_analysis` and `autonomy_check` plus bounded self-healing
+through `recovery_rule_create`, `recovery_rule_list`, `recovery_incidents`, and
+`recovery_trigger`. Recovery state is persistent and token-isolated, with
+maximum attempts and cooldowns. Autonomous operations are **disabled by
+default** and require `RAMCP_AUTONOMOUS=1`; high-risk and critical recovery
+also require their respective explicit environment flags. Recovery actions use
+the same policy, scope, read-only, audit, and context-wrapped tool execution as
+normal requests, and cannot invoke approvals, plugins, automation lifecycle,
+or recovery lifecycle tools.
+
+## Plugin Isolation & Ecosystem
+
+Plugins are local, explicit installations. A plugin directory must contain a
+`manifest.json` with a semver-like `version` and a relative `entry` exporting
+`register(server, ctx)`. The gateway validates the tree, rejects symlinks and
+oversized packages, stores a SHA-256 fingerprint, and verifies that fingerprint
+before every child-process start. Plugin tools are exposed as
+`plugin_<name>__<tool>` and require the `plugins` token scope; declared plugin
+scopes must also be available to the token.
+
+Example manifest:
+
+```json
+{
+  "name": "my-plugin",
+  "version": "1.0.0",
+  "entry": "index.js",
+  "permissions": ["fs.write"],
+  "scopes": ["filesystem"]
+}
+```
+
+Runtime permissions are deliberately small: `fs.read` permits reads inside
+the plugin directory, `fs.write` permits writes only under the plugin's
+`data/` directory, and `process` permits child processes. Network access is
+disabled by default. On Linux the child also gets a separate network namespace
+and deny-by-default network filter. If the required sandbox is unavailable,
+the plugin is skipped unless `RAMCP_PLUGIN_UNSANDBOXED=1` is explicitly set by
+the operator. Plugin calls are short-lived and have a bounded execution time;
+there are no persistent plugin worker processes.
+
+The plugin host receives no token secret and no gateway mutation API. This is
+an intentional break from the old in-process `trusted: true` model: declaring
+trust inside a manifest is not considered a security boundary.
 
 ## Webhooks
 
@@ -248,6 +307,49 @@ MIT — see [LICENSE](LICENSE).
 ---
 
 📚 [README فارسی](README.fa.md) | [Roadmap](ROADMAP.md) | [Security Policy](SECURITY.md) | [Changelog](CHANGELOG.md) | [Contributing](CONTRIBUTING.md)
+
+## Capability Router & Context Efficiency
+
+Phase 2 adds a capability catalog and discovery layer for agent clients:
+`capability_discover` returns only capabilities authorized for the current
+token and includes context-cost and latency hints. `capability_batch` runs up
+to eight independent read-only calls in parallel and rejects mutating actions.
+
+For tokens with explicit scopes, `RAMCP_TOOL_EXPOSURE=scoped` can also reduce
+`tools/list` itself to the authorized tool set. The default remains `all` for
+backward compatibility. In the built-in benchmark, a scoped token exposed
+14 tools instead of 77 and reduced the serialized `tools/list` response by
+80.3% (30,802 → 6,054 bytes).
+
+## Task / Workflow / Agent Engine
+
+Phase 3 adds durable orchestration through the `task` tool. A task contains a
+validated action graph and can run independent actions in parallel while
+respecting dependencies, retries, per-action timeouts, verification hooks,
+dry-run mode, and compensation rollback. `supervised` tasks pause before
+mutating actions and resume through `task_approve`; interrupted/failed tasks
+can be resumed with `task_resume` because task state is persisted under RAMCP's
+own data directory and isolated by token.
+
+Specialized profiles are available through `agent_profiles` and optional action
+assignment: `explorer`, `planner`, `implementer`, `tester`, `reviewer`,
+`security`, and `deployer`. Profiles constrain capability scopes and autonomy;
+they are deterministic execution roles, not hidden model instances. The
+existing `task_status` tool remains backward compatible with plan tracking and
+also reports workflow tasks.
+
+## Developer Intelligence
+
+Phase 4 adds a compact developer-intelligence layer without replacing the existing policy core:
+
+- `project_profile` / `project_profile_list` / `project_profile_set` keep per-token workspace knowledge under RAMCP's own data directory.
+- `impact_analysis` builds a lightweight reverse dependency graph for changed source files.
+- `git_intelligence` summarizes repository state, history, diff statistics, branches, and remotes without permitting arbitrary Git verbs.
+- `github_repo`, `github_issues`, and `github_pull_request` provide read-only GitHub intelligence when `GITHUB_TOKEN` or `GH_TOKEN` is configured.
+- `sentry_projects`, `sentry_issues`, and `sentry_issue` provide read-only Sentry intelligence when `SENTRY_AUTH_TOKEN` is configured.
+- `developer_context_status` reports the Codebase Memory isolation contract, Context7 proxy, and Context Mode's local/client-side role.
+
+GitHub and Sentry credentials are read only from environment variables and are never returned by these tools. Dynamic Context7 and Codebase Memory tools can be exposed to scoped tokens only through the explicit `integrations` scope.
 
 ## Optional MCP integrations
 

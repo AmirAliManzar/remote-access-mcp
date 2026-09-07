@@ -7,6 +7,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { assertToolPermitted, assertAllowed } from '../core/policy.js';
 import { dataDir } from '../core/platform.js';
 import type { ToolContext } from '../core/context.js';
+import { TaskEngine, taskSummary } from '../core/task-engine.js';
 
 /**
  * Planning toolkit: task plans + workspace snapshots with rollback.
@@ -48,6 +49,10 @@ function snapDir(): string {
 }
 
 export function registerPlanningTools(server: McpServer, ctx: ToolContext): void {
+  const taskEngine = new TaskEngine(ctx.token.token, async (name, args) => {
+    if (!ctx.invokeTool) throw new Error('task executor is unavailable');
+    return ctx.invokeTool(name, args);
+  });
   const policy = () => ({
     allowed_paths: ctx.token.allowed_paths,
     denied_paths: ctx.token.denied_paths,
@@ -89,6 +94,8 @@ export function registerPlanningTools(server: McpServer, ctx: ToolContext): void
     },
     async ({ id, done_steps }) => {
       assertToolPermitted({ tool: 'task_status', scopes: ctx.token.scopes, readOnly: ctx.readOnly });
+      const task = taskEngine.get(id);
+      if (task) return { content: [{ type: 'text', text: JSON.stringify(taskSummary(task)) }] };
       const plans = loadStore<TaskPlan>('plans');
       const plan = plans.find(p => p.id === id);
       if (!plan) return { content: [{ type: 'text', text: `Plan ${id} not found.` }], isError: true };

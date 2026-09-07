@@ -22,9 +22,11 @@ export const TOOL_SCOPES: Record<string, string[]> = {
   services: ['service_status', 'service_action'],
   packages: ['package_list', 'package_install', 'package_remove'],
   schedule: ['schedule_command', 'cancel_scheduled_task', 'list_scheduled_tasks'],
-  project: ['analyze_project', 'project_health_check'],
-  security: ['secret_scan', 'port_scan_local'],
-  planning: ['create_task_plan', 'task_status', 'workspace_snapshot', 'rollback_changes'],
+  automation: ['automation_create', 'automation_list', 'automation_enable', 'automation_delete', 'automation_trigger', 'automation_status'],
+  project: ['analyze_project', 'project_health_check', 'project_profile', 'project_profile_list', 'project_profile_set', 'impact_analysis', 'developer_context_status'],
+  intelligence: ['git_intelligence', 'github_repo', 'github_issues', 'github_pull_request', 'sentry_projects', 'sentry_issues', 'sentry_issue'],
+  security: ['secret_scan', 'port_scan_local', 'security_analysis', 'autonomy_check', 'recovery_rule_create', 'recovery_rule_list', 'recovery_rule_delete', 'recovery_incidents', 'recovery_trigger', 'recovery_reset'],
+  planning: ['create_task_plan', 'task_status', 'task_list', 'task_approve', 'task_reject', 'task_resume', 'task', 'agent_profiles', 'workspace_snapshot', 'rollback_changes'],
   formatting: ['format_python', 'lint_python'],
   documents: ['create_document'],
   ops: ['environment_inspect', 'nginx_inspect'],
@@ -38,6 +40,11 @@ export const TOOL_SCOPES: Record<string, string[]> = {
   prompts: ['diagnose_prompt', 'deploy_prompt', 'security_audit_prompt', 'inspect_project_prompt'],
   plugins: ['plugin_list', 'plugin_install', 'plugin_remove'],
   approvals: ['approval_decide'],
+  router: ['capability_discover', 'capability_batch'],
+  integrations: [],
+  browser: ['browser_open', 'browser_extract', 'browser_screenshot'],
+  infrastructure: ['infra_probe', 'docker_ps', 'docker_inspect', 'docker_logs', 'docker_action', 'kubernetes_get', 'kubernetes_describe', 'kubernetes_logs', 'cloudflare_status'],
+  context: ['context_stats', 'context_memory', 'context_snapshot', 'context_diff', 'context_budget', 'context_clear'],
 };
 
 /** Tools that mutate state — refused under read_only. */
@@ -46,9 +53,10 @@ export const MUTATING_TOOLS = new Set([
   'git', 'sqlite_query', 'allow_path', 'deny_path',
   'package_install', 'package_remove', 'service_action',
   'schedule_command', 'cancel_scheduled_task', 'workspace_snapshot', 'rollback_changes',
+  'automation_create', 'automation_enable', 'automation_delete', 'automation_trigger', 'recovery_rule_create', 'recovery_rule_delete', 'recovery_trigger', 'recovery_reset',
   'run_background', 'job_cancel', 'run_parallel', 'upload_file',
   'package_install', 'package_remove', 'service_action', 'change_set_begin', 'change_set_add', 'change_set_commit', 'change_set_rollback',
-  'health_watch', 'health_stop', 'plugin_install', 'plugin_remove',
+  'health_watch', 'health_stop', 'plugin_install', 'plugin_remove', 'context_snapshot', 'context_clear', 'approval_decide', 'project_profile_set', 'task_approve', 'task_reject', 'task_resume', 'docker_action', 'browser_screenshot',
 ]);
 
 /** Thrown by tools when a target path is outside the policy sandbox. */
@@ -128,6 +136,7 @@ export function shellAllowed(policy: PolicyConfig): boolean {
 
 /** Map a tool name to its scope group (null = uncategorized). */
 export function scopeOf(tool: string): string | null {
+  if (tool.startsWith('plugin_')) return 'plugins';
   for (const [group, tools] of Object.entries(TOOL_SCOPES)) {
     if (tools.includes(tool)) return group;
   }
@@ -197,7 +206,7 @@ export function assertToolPermitted(
       throw new ScopeError(tool, `outside token scopes (${scopes.join(', ')})`);
     }
   }
-  if (readOnly && MUTATING_TOOLS.has(tool)) {
+  if (readOnly && (MUTATING_TOOLS.has(tool) || tool.startsWith('plugin_'))) {
     throw new ScopeError(tool, 'read-only mode is active');
   }
   if (target !== undefined && policy) {
