@@ -1,5 +1,13 @@
 # Changelog
 
+## 4.1.0 - Multi-Provider Tunnels
+
+- Added pluggable tunnel providers: Cloudflare Quick Tunnel, Pinggy, and localhost.run.
+- Added `--provider cloudflare|pinggy|localhostrun|auto` selection and automatic fallback.
+- Cloudflare Quick Tunnel URL parsing now explicitly rejects `api.trycloudflare.com`, preventing the control-plane API endpoint from being shown as the public MCP URL.
+- Provider selection remains opt-in; existing production `mcp.amiralimanzar.ir` configuration is not changed by tunnel provider support.
+
+
 ## 4.0.0 - Final Hardening
 
 ### Security & Reliability

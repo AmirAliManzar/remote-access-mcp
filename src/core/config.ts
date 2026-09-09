@@ -35,7 +35,7 @@ export interface RamcpConfig {
   /** Additional endpoint paths served alongside mcp_path (e.g. legacy /mcp). */
   mcp_path_aliases?: string[];
   /** Tunnel settings for laptops/desktops with no public IP. */
-  tunnel?: { provider: 'cloudflare'; auto_start: boolean };
+  tunnel?: { provider: 'cloudflare' | 'pinggy' | 'localhostrun' | 'auto'; auto_start: boolean };
   /** Optional outbound webhooks fired on audit events (v3). */
   webhooks?: { url: string; events: string[]; enabled: boolean }[];
   log_level: 'debug' | 'info' | 'warn' | 'error' | 'silent';

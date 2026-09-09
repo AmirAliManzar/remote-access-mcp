@@ -16,7 +16,8 @@ import {
   platform, isWindows, isMac, isLinux, hasSystemd, which, platformLabel,
   readRuntimeState,
 } from '../core/platform.js';
-import { ensureCloudflared, startQuickTunnel, resolveCloudflared } from '../core/tunnel.js';
+import { ensureCloudflared, resolveCloudflared } from '../core/tunnel.js';
+import { startTunnelProvider, startTunnelAuto, type TunnelProviderName } from '../core/tunnel-providers.js';
 
 const PKG_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const PKG = JSON.parse(fs.readFileSync(path.join(PKG_ROOT, 'package.json'), 'utf8'));
@@ -32,8 +33,8 @@ Usage:
 
 Getting started:
   init [--paths a,b]            Create config + first token
-  start [--tunnel]              Run the gateway (--tunnel = public https URL)
-  tunnel                        Start gateway + public URL, print connector link
+  start [--tunnel] [--provider P] Run the gateway (--tunnel = public https URL)
+  tunnel [--provider P]        Start gateway + public URL (cloudflare|pinggy|localhostrun|auto)
   url [token]                   Print the connector URL for a chatbot
   doctor                        Diagnose everything in one pass
   status                        Config + service summary
@@ -94,7 +95,7 @@ function parseArgs(argv: string[]): Args {
   const flags = new Set<string>();
   const values = new Map<string, string>();
   // Flags that always take a value (so `--paths /a /b` still works positionally)
-  const valueFlags = new Set(['name', 'paths', 'deny', 'scopes', 'rpm', 'expires', 'token', 'host', 'port', 'domain', 'tool', 'since', 'limit', 'tools', 'url', 'events', 'out', 'note', 'role', 'commands', 'approval']);
+  const valueFlags = new Set(['name', 'paths', 'deny', 'scopes', 'rpm', 'expires', 'token', 'host', 'port', 'domain', 'tool', 'since', 'limit', 'tools', 'url', 'events', 'out', 'note', 'role', 'commands', 'approval', 'provider']);
   for (let i = 0; i < rest.length; i++) {
     const a = rest[i];
     if (a.startsWith('--')) {
@@ -210,6 +211,7 @@ async function cmdStart(args: Args): Promise<void> {
     port: args.values.has('port') ? parseInt(args.values.get('port')!, 10) : undefined,
     readOnly: args.flags.has('read-only'),
     tunnel: args.flags.has('tunnel'),
+    tunnelProvider: args.values.get('provider') as TunnelProviderName | undefined,
   });
 }
 
@@ -220,6 +222,7 @@ async function cmdTunnel(args: Args): Promise<void> {
     port: args.values.has('port') ? parseInt(args.values.get('port')!, 10) : undefined,
     readOnly: args.flags.has('read-only'),
     tunnel: true,
+    tunnelProvider: args.values.get('provider') as TunnelProviderName | undefined,
   });
 }
 

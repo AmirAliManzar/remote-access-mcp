@@ -364,3 +364,16 @@ Integrations are loaded before the MCP transport connects, so the initial `tools
 ### Context Mode local setup
 
 The `context-mode` package is intentionally kept as an optional dependency. Install Remote Access MCP locally, then configure the detected coding agent to run the local `context-mode` executable according to the upstream Context Mode documentation. Do not expose its MCP server through a Remote Access MCP HTTP endpoint.
+
+### Tunnel providers (4.1)
+
+`ramcp tunnel` uses Cloudflare Quick Tunnel by default. You can select a provider explicitly or let RAMCP fall back in order:
+
+```bash
+ramcp tunnel --provider cloudflare
+ramcp tunnel --provider pinggy
+ramcp tunnel --provider localhostrun
+ramcp tunnel --provider auto
+```
+
+`auto` tries providers sequentially and keeps only the first successful tunnel alive. Provider support is intentionally ephemeral: it does not alter `public_host` or the existing production endpoint. Quick Tunnel and other free tunnel services are best-effort and subject to their own availability, limits, and terms.

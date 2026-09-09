@@ -8,7 +8,8 @@ import { loadLiveConfig } from '../core/config.js';
 import { buildApp } from './app.js';
 import { startScheduler } from '../tools/schedule.js';
 import { shellCommand, childEnv, platformLabel, writeRuntimeState, clearRuntimeState, dataDir } from '../core/platform.js';
-import { startQuickTunnel, type TunnelHandle } from '../core/tunnel.js';
+import { type TunnelHandle } from '../core/tunnel.js';
+import { startTunnelProvider, startTunnelAuto, type TunnelProviderName } from '../core/tunnel-providers.js';
 import { jobManager } from '../core/jobs.js';
 import { AuditLog } from '../core/audit.js';
 import { startAutomationEngine } from '../core/automation-engine.js';
@@ -22,6 +23,7 @@ export async function runServer(opts: {
   port?: number;
   readOnly?: boolean;
   tunnel?: boolean;
+  tunnelProvider?: TunnelProviderName;
 } = {}): Promise<void> {
   const cfg = loadLiveConfig();
   if (!cfg.tokens.length) {
@@ -75,7 +77,11 @@ export async function runServer(opts: {
   const wantTunnel = opts.tunnel ?? cfg.tunnel?.auto_start ?? false;
   if (wantTunnel) {
     try {
-      tunnel = await startQuickTunnel({ port, host, log: (m) => console.log(`[tunnel] ${m}`) });
+      const provider = opts.tunnelProvider || cfg.tunnel?.provider || 'cloudflare';
+      console.log(`[tunnel] provider: ${provider}`);
+      tunnel = provider === 'auto'
+        ? await startTunnelAuto({ port, host, log: (m) => console.log(`[tunnel] ${m}`) })
+        : await startTunnelProvider(provider, { port, host, log: (m) => console.log(`[tunnel] ${m}`) });
       writeRuntimeState({ pid: process.pid, tunnel_url: tunnel.url, host, port, started: new Date().toISOString() });
       console.log(`\npublic URL: ${tunnel.url}${cfg.mcp_path}`);
       console.log(`connector:  ${tunnel.url}/${cfg.tokens[0].token}${cfg.mcp_path}`);

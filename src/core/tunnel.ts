@@ -82,10 +82,17 @@ export async function ensureCloudflared(log: (msg: string) => void = () => {}): 
   return dest;
 }
 
+/** Extract only the public Quick Tunnel hostname; never confuse the control-plane API URL with it. */
+export function extractQuickTunnelUrl(text: string): string | null {
+  const candidates = text.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/gi) || [];
+  return candidates.find((u) => !/^https:\/\/api\.trycloudflare\.com$/i.test(u)) || null;
+}
+
 export interface TunnelHandle {
   url: string;
   child: ChildProcess;
   stop(): void;
+  provider?: string;
 }
 
 /**
@@ -129,14 +136,15 @@ export async function startQuickTunnel(opts: {
       const text = chunk.toString();
       buffer += text;
       // cloudflared prints e.g. https://random-words-1234.trycloudflare.com
-      const m = buffer.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/);
-      if (m && !settled) {
+      const publicUrl = extractQuickTunnelUrl(buffer);
+      if (publicUrl && !settled) {
         settled = true;
         clearTimeout(timer);
         resolve({
-          url: m[0],
+          url: publicUrl,
           child,
           stop: () => { try { child.kill(); } catch { /* already gone */ } },
+          provider: 'cloudflare',
         });
       }
     };
