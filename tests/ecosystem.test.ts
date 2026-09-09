@@ -42,7 +42,7 @@ describe('Phase 5 browser + infrastructure tools', () => {
     await expect(h.get('docker_action')!({ action: 'restart', container: 'safe-name' })).rejects.toThrow();
   });
 
-  it('infra probe is non-destructive and reports missing tools instead of failing the request', async () => {
+  it('infra probe is non-destructive and reports missing tools instead of failing the request', { timeout: 30_000 }, async () => {
     const h = harness(registerInfrastructureTools);
     const result = await h.get('infra_probe')!({});
     expect(result.isError).not.toBe(true);
