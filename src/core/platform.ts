@@ -88,6 +88,9 @@ export function runtimeStatePath(): string {
 export interface RuntimeState {
   pid: number;
   tunnel_url?: string;
+  tunnel_provider?: string;
+  direct_url?: string;
+  direct_port?: number;
   host: string;
   port: number;
   started: string;

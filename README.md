@@ -15,6 +15,20 @@ npm install -g remote-access-mcp
 ramcp init
 ```
 
+
+### Direct HTTP fallback
+
+When no tunnel provider is available, Direct HTTP can expose the gateway on a randomly selected high dynamic port. MARS never claims common public/service ports such as 80, 443, 8443, 2083, 2087, or 2096 for this feature. On Linux, UFW is updated automatically when available, and the listener is health-checked before its connector URL is printed.
+
+```bash
+ramcp start --direct
+ramcp tunnel --provider auto
+ramcp tunnel --direct
+ramcp url
+```
+
+Auto mode remembers the last successful tunnel provider and tries it first on the next start, reducing unnecessary link changes. Provider-generated free tunnel hostnames can still change when the provider itself does not offer persistent hostnames.
+
 ## Why
 
 AI assistants are great, but they're sandboxed away from your infrastructure. This gateway flips that: your chatbot *becomes* the ops engineer. "Check why the disk is filling up, fix it, and show me the logs" becomes an actual conversation.

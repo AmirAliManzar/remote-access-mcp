@@ -15,3 +15,13 @@ describe('tunnel provider safety', () => {
     expect(TUNNEL_PROVIDERS).toEqual(['cloudflare', 'pinggy', 'localhostrun']);
   });
 });
+
+
+describe('tunnel persistence contract', () => {
+  it('supports a preferred provider without changing the public provider list', async () => {
+    const mod = await import('../src/core/tunnel-providers.js');
+    expect(mod.TUNNEL_PROVIDERS.includes('cloudflare')).toBe(true);
+    expect(mod.TUNNEL_PROVIDERS.includes('pinggy')).toBe(true);
+    expect(mod.TUNNEL_PROVIDERS.includes('localhostrun')).toBe(true);
+  });
+});

@@ -33,8 +33,8 @@ Usage:
 
 Getting started:
   init [--paths a,b]            Create config + first token
-  start [--tunnel] [--provider P] Run the gateway (--tunnel = public https URL)
-  tunnel [--provider P]        Start gateway + public URL (cloudflare|pinggy|localhostrun|auto)
+  start [--tunnel] [--provider P] [--direct] [--port P] Run the gateway
+  tunnel [--provider P] [--direct] Start gateway + public URL (cloudflare|pinggy|localhostrun|auto)
   url [token]                   Print the connector URL for a chatbot
   doctor                        Diagnose everything in one pass
   status                        Config + service summary
@@ -95,7 +95,7 @@ function parseArgs(argv: string[]): Args {
   const flags = new Set<string>();
   const values = new Map<string, string>();
   // Flags that always take a value (so `--paths /a /b` still works positionally)
-  const valueFlags = new Set(['name', 'paths', 'deny', 'scopes', 'rpm', 'expires', 'token', 'host', 'port', 'domain', 'tool', 'since', 'limit', 'tools', 'url', 'events', 'out', 'note', 'role', 'commands', 'approval', 'provider']);
+  const valueFlags = new Set(['name', 'paths', 'deny', 'scopes', 'rpm', 'expires', 'token', 'host', 'port', 'domain', 'tool', 'since', 'limit', 'tools', 'url', 'events', 'out', 'note', 'role', 'commands', 'approval', 'provider', 'direct-port']);
   for (let i = 0; i < rest.length; i++) {
     const a = rest[i];
     if (a.startsWith('--')) {
@@ -211,7 +211,9 @@ async function cmdStart(args: Args): Promise<void> {
     port: args.values.has('port') ? parseInt(args.values.get('port')!, 10) : undefined,
     readOnly: args.flags.has('read-only'),
     tunnel: args.flags.has('tunnel'),
-    tunnelProvider: args.values.get('provider') as TunnelProviderName | undefined,
+    tunnelProvider: args.values.get('provider') as TunnelProviderName | 'auto' | undefined,
+    direct: args.flags.has('direct'),
+    directPort: args.values.has('direct-port') ? parseInt(args.values.get('direct-port')!, 10) : undefined,
   });
 }
 
@@ -221,8 +223,10 @@ async function cmdTunnel(args: Args): Promise<void> {
     host: args.values.get('host'),
     port: args.values.has('port') ? parseInt(args.values.get('port')!, 10) : undefined,
     readOnly: args.flags.has('read-only'),
-    tunnel: true,
-    tunnelProvider: args.values.get('provider') as TunnelProviderName | undefined,
+    tunnel: !args.flags.has('direct'),
+    tunnelProvider: args.values.get('provider') as TunnelProviderName | 'auto' | undefined,
+    direct: args.flags.has('direct'),
+    directPort: args.values.has('direct-port') ? parseInt(args.values.get('direct-port')!, 10) : undefined,
   });
 }
 
@@ -240,6 +244,12 @@ function cmdUrl(args: Args): void {
     const base = rt.tunnel_url.replace(/\/+$/, '');
     console.log(`${base}/${t.token}${cfg.mcp_path}`);
     console.log(`\n(live tunnel — pid ${rt.pid}, since ${rt.started})`);
+    return;
+  }
+  if (rt?.direct_url) {
+    const base = rt.direct_url.replace(/\/+$/, '');
+    console.log(`${base}/${t.token}${cfg.mcp_path}`);
+    console.log(`\n(live direct HTTP — port ${rt.direct_port}, pid ${rt.pid})`);
     return;
   }
 
@@ -801,6 +811,7 @@ function cmdStatus(): void {
   console.log(`gateway process:   ${rt ? `running (pid ${rt.pid})` : 'not running'}`);
   console.log(`public_host:       ${cfg.public_host || '(none — use `ramcp tunnel`)'}`);
   console.log(`live tunnel:       ${rt?.tunnel_url || '(none)'}`);
+  console.log(`direct HTTP:       ${rt?.direct_url || '(none)'}`);
   console.log(`tokens:            ${cfg.tokens.length}`);
   console.log(`allowed paths:     ${cfg.tokens.reduce((n, t) => n + t.allowed_paths.length, 0)}`);
   console.log(`audit:             ${cfg.audit.enabled ? 'on' : 'off'}`);

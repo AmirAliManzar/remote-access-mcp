@@ -11,6 +11,7 @@ import { shellCommand, childEnv, platformLabel, writeRuntimeState, clearRuntimeS
 import { type TunnelHandle } from '../core/tunnel.js';
 import { startTunnelProvider, startTunnelAuto, type TunnelProviderName } from '../core/tunnel-providers.js';
 import { jobManager } from '../core/jobs.js';
+import { allowDirectPort, chooseDirectPort, denyDirectPort, getPublicIPv4 } from '../core/direct-http.js';
 import { AuditLog } from '../core/audit.js';
 import { startAutomationEngine } from '../core/automation-engine.js';
 
@@ -23,7 +24,9 @@ export async function runServer(opts: {
   port?: number;
   readOnly?: boolean;
   tunnel?: boolean;
-  tunnelProvider?: TunnelProviderName;
+  tunnelProvider?: TunnelProviderName | 'auto';
+  direct?: boolean;
+  directPort?: number;
 } = {}): Promise<void> {
   const cfg = loadLiveConfig();
   if (!cfg.tokens.length) {
@@ -59,7 +62,10 @@ export async function runServer(opts: {
   automation.unref();
 
   const httpServer = createServer(app);
+  let directServer: ReturnType<typeof createServer> | null = null;
+  let directPort: number | undefined;
   let tunnel: TunnelHandle | null = null;
+  let tunnelFailed = false;
 
   await new Promise<void>((resolve) => httpServer.listen(port, host, () => resolve()));
 
@@ -75,14 +81,19 @@ export async function runServer(opts: {
   console.log(`tokens:     ${cfg.tokens.length} | audit: ${cfg.audit.enabled ? 'on' : 'off'} | read_only: ${cfg.read_only ? 'on' : 'off'}`);
 
   const wantTunnel = opts.tunnel ?? cfg.tunnel?.auto_start ?? false;
+  const wantDirect = opts.direct === true || cfg.direct_http?.enabled === true;
   if (wantTunnel) {
     try {
-      const provider = opts.tunnelProvider || cfg.tunnel?.provider || 'cloudflare';
-      console.log(`[tunnel] provider: ${provider}`);
-      tunnel = provider === 'auto'
-        ? await startTunnelAuto({ port, host, log: (m) => console.log(`[tunnel] ${m}`) })
-        : await startTunnelProvider(provider, { port, host, log: (m) => console.log(`[tunnel] ${m}`) });
-      writeRuntimeState({ pid: process.pid, tunnel_url: tunnel.url, host, port, started: new Date().toISOString() });
+      const preferred = cfg.tunnel?.preferred_provider;
+      const configured = opts.tunnelProvider || cfg.tunnel?.provider || 'cloudflare';
+      const provider = configured === 'auto' && preferred ? preferred : configured;
+      console.log(`[tunnel] provider: ${provider}${configured === 'auto' && preferred ? ' (preferred)' : ''}`);
+      tunnel = configured === 'auto'
+        ? await startTunnelAuto({ port, host, log: (m) => console.log(`[tunnel] ${m}`) }, preferred)
+        : await startTunnelProvider(provider as TunnelProviderName, { port, host, log: (m) => console.log(`[tunnel] ${m}`) });
+      cfg.tunnel = { ...(cfg.tunnel || { provider: configured as any, auto_start: false }), preferred_provider: tunnel.provider as any, last_url: tunnel.url };
+      try { const { saveConfig } = await import('../core/config.js'); saveConfig(cfg); } catch { /* runtime link persistence is best effort */ }
+      writeRuntimeState({ pid: process.pid, tunnel_url: tunnel.url, tunnel_provider: tunnel.provider, host, port, started: new Date().toISOString() });
       console.log(`\npublic URL: ${tunnel.url}${cfg.mcp_path}`);
       console.log(`connector:  ${tunnel.url}/${cfg.tokens[0].token}${cfg.mcp_path}`);
 
@@ -112,10 +123,41 @@ export async function runServer(opts: {
 
       console.log(`\n(keep this process running — the URL dies when it exits)`);
     } catch (e: any) {
+      tunnelFailed = true;
       console.error(`[tunnel] failed: ${e.message}`);
       console.error('[tunnel] the gateway is still reachable locally.');
+      console.log('[direct] tunnel unavailable; trying direct HTTP fallback.');
     }
-  } else if (cfg.public_host) {
+  }
+
+  if (wantDirect || (!tunnel && tunnelFailed)) {
+    try {
+      directPort = await chooseDirectPort(opts.directPort ?? cfg.direct_http?.port);
+      directServer = createServer(app);
+      await new Promise<void>((resolve, reject) => {
+        directServer!.once('error', reject);
+        directServer!.listen(directPort!, '0.0.0.0', () => { directServer!.removeListener('error', reject); resolve(); });
+      });
+      await allowDirectPort(directPort);
+      cfg.direct_http = { enabled: false, port: directPort };
+      try { const { saveConfig } = await import('../core/config.js'); saveConfig(cfg); } catch { /* best effort */ }
+      const ipv4 = getPublicIPv4();
+      const directUrl = ipv4 ? `http://${ipv4}:${directPort}` : `http://<server-ipv4>:${directPort}`;
+      writeRuntimeState({ pid: process.pid, tunnel_url: tunnel?.url, tunnel_provider: tunnel?.provider, direct_url: directUrl, direct_port: directPort, host, port, started: new Date().toISOString() });
+      console.log(`\npublic direct URL: ${directUrl}${cfg.mcp_path}`);
+      console.log(`direct connector:  ${directUrl}/${cfg.tokens[0].token}${cfg.mcp_path}`);
+      try {
+        const r = await fetch(`http://127.0.0.1:${directPort}/health`, { signal: AbortSignal.timeout(5000) });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        console.log('[direct] verified: local listener and MCP gateway are healthy.');
+      } catch (e: any) {
+        console.log(`[direct] WARNING: health check failed: ${e.message}`);
+      }
+    } catch (e: any) {
+      if (directServer) { try { directServer.close(); } catch {} directServer = null; }
+      console.error(`[direct] failed: ${e.message}`);
+    }
+  } else if (!tunnel && cfg.public_host) {
     console.log(`endpoint:   https://${cfg.public_host}${cfg.mcp_path}`);
   } else {
     console.log(`endpoint:   http://${host}:${port}${cfg.mcp_path}`);
@@ -129,6 +171,8 @@ export async function runServer(opts: {
     console.log('\nshutting down...');
     jobManager.shutdown();
     tunnel?.stop();
+    if (directPort) void denyDirectPort(directPort);
+    directServer?.close();
     clearRuntimeState();
     httpServer.close(() => process.exit(0));
     setTimeout(() => process.exit(0), 3000).unref();

@@ -57,9 +57,10 @@ export async function startTunnelProvider(name: TunnelProviderName, opts: Tunnel
   return startSshTunnel(name, opts, ['-o', 'StrictHostKeyChecking=accept-new', '-o', 'ExitOnForwardFailure=yes', '-R', `80:${host}:${opts.port}`, 'nokey@localhost.run']);
 }
 
-export async function startTunnelAuto(opts: TunnelProviderOptions): Promise<TunnelHandle> {
+export async function startTunnelAuto(opts: TunnelProviderOptions, preferred?: TunnelProviderName): Promise<TunnelHandle> {
   const failures: string[] = [];
-  for (const provider of TUNNEL_PROVIDERS) {
+  const order = preferred ? [preferred, ...TUNNEL_PROVIDERS.filter(p => p !== preferred)] : TUNNEL_PROVIDERS;
+  for (const provider of order) {
     try { return await startTunnelProvider(provider, opts); }
     catch (e: any) { failures.push(`${provider}: ${e?.message || e}`); }
   }

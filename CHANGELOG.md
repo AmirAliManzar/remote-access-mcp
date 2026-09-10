@@ -1,5 +1,16 @@
 # Changelog
 
+## 4.2.0 - Persistent Public Access
+
+- Added direct HTTP fallback on high dynamic ports only.
+- Reserved common public/service ports such as 80, 443, 8443, 2083, 2087 and 2096.
+- Added automatic UFW allow/cleanup for direct HTTP ports when available.
+- Added public IPv4 detection and direct connector URL output.
+- Added preferred tunnel provider persistence so auto mode retries the last successful provider first.
+- Persisted the last tunnel URL as historical state without presenting stale URLs as live.
+- `ramcp url` now reports the live direct HTTP connector when active.
+
+
 ## 4.1.0 - Multi-Provider Tunnels
 
 - Added pluggable tunnel providers: Cloudflare Quick Tunnel, Pinggy, and localhost.run.
