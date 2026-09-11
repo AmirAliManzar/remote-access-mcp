@@ -1,5 +1,15 @@
 # Changelog
 
+## 4.3.0 - TUI Experience
+
+- Added an interactive terminal UI when `ramcp` is launched without arguments from an interactive terminal.
+- Added a guided first-run setup wizard for filesystem access and connection/tunnel selection.
+- Added a MARS-focused dashboard for MCP runtime, connection, tunnel, authentication and audit status.
+- Added interactive tunnel/provider selection for Auto, Pinggy, Cloudflare, localhost.run and Direct HTTP.
+- Added TUI views for tokens/access, diagnostics and operational output while preserving the existing script-friendly CLI commands.
+- Kept TUI scope limited to Remote Access MCP; it does not act as a general server control center.
+- Added the Blessed terminal UI runtime dependency and packaging support.
+
 ## 4.2.0 - Persistent Public Access
 
 - Added direct HTTP fallback on high dynamic ports only.

@@ -946,6 +946,11 @@ function cmdConfig(args: Args): void {
 // main
 // ---------------------------------------------------------------------------
 export async function main(argv: string[]): Promise<void> {
+  if (argv.length === 0 && process.stdin.isTTY && process.stdout.isTTY) {
+    const { launchTui } = await import('../tui/main.js');
+    launchTui();
+    return;
+  }
   const args = parseArgs(argv);
   if (args.flags.has('h') || args.flags.has('help')) { console.log(HELP); process.exit(0); }
 
