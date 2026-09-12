@@ -35,12 +35,13 @@ function makeScreen(): Screen {
   return screen;
 }
 
-function header(screen: Screen, subtitle = 'Remote Access MCP'): Box {
+function header(screen: Screen, subtitle = ''): Box {
+  const title = subtitle && subtitle !== APP ? `${APP}  ${subtitle}` : APP;
   const box = blessed.box({
     parent: screen,
     top: 0, left: 0, right: 0, height: 3,
     tags: true,
-    content: `{bold}{cyan-fg}${APP}{/cyan-fg}  {white-fg}${subtitle}{/white-fg}{/bold}`,
+    content: `{bold}{cyan-fg}${title}{/cyan-fg}{/bold}`,
     border: { type: 'line' },
     style: { border: { fg: 'cyan' }, fg: 'white' },
   });
@@ -133,23 +134,49 @@ function dashboard(screen: Screen): void {
 }
 
 function runCommand(screen: Screen, args: string[]): void {
-  const box = card(screen, 'OPERATION', 4, 2, '96%', 18);
-  footer(screen, 'Running…   q Quit');
+  screen.children.slice(0).forEach(c => c !== screen && c.destroy());
+  const box = card(screen, 'OPERATION', 4, 2, '96%', 20);
+  const startedAt = Date.now();
+  const commandText = `ramcp ${args.join(' ')}`;
+  footer(screen, `Running: ${commandText.slice(0, 90)}`);
   const bin = process.argv[1];
-  const child = spawn(process.execPath, [bin, ...args], { stdio: ['ignore', 'pipe', 'pipe'], env: process.env });
   let output = '';
-  const append = (data: Buffer) => {
+  let finished = false;
+  const append = (data: Buffer | string) => {
     output += data.toString();
-    box.setContent(`\n${output.slice(-12000)}`);
+    box.setContent(`\n{gray-fg}$ ${commandText}{/gray-fg}\n\n${output.slice(-14000)}`);
     screen.render();
   };
-  child.stdout.on('data', append); child.stderr.on('data', append);
-  child.on('close', code => {
-    box.setContent(`\n${output.slice(-11000)}\n\n{${code === 0 ? 'green-fg' : 'red-fg'}}${code === 0 ? '✓ Completed' : `✗ Failed (exit ${code})`}{/}\n\nPress Enter to return.`);
-    footer(screen, 'Enter Back   q Quit');
-    screen.onceKey('enter', () => dashboard(screen));
+  try {
+    const child = spawn(process.execPath, [bin, ...args], { stdio: ['ignore', 'pipe', 'pipe'], env: process.env });
+    child.stdout.on('data', append);
+    child.stderr.on('data', append);
+    child.on('error', (error: Error) => {
+      if (finished) return;
+      finished = true;
+      showOperationResult(screen, box, commandText, output, null, error, Date.now() - startedAt);
+    });
+    child.on('close', (code, signal) => {
+      if (finished) return;
+      finished = true;
+      showOperationResult(screen, box, commandText, output, code, signal ? new Error(`terminated by signal ${signal}`) : null, Date.now() - startedAt);
+    });
     screen.render();
-  });
+  } catch (error) {
+    showOperationResult(screen, box, commandText, output, null, error instanceof Error ? error : new Error(String(error)), Date.now() - startedAt);
+  }
+}
+
+function showOperationResult(screen: Screen, box: Box, commandText: string, output: string, code: number | null, error: Error | null, elapsedMs: number): void {
+  const ok = code === 0 && !error;
+  const reportId = `${new Date().toISOString().replace(/\D/g, '').slice(0, 14)}-${Math.random().toString(36).slice(2, 8)}`;
+  const detail = error?.message || (code === null ? 'process ended without an exit code' : `exit code ${code}`);
+  const cleanOutput = output.trim() || '(no output)';
+  const color = ok ? 'green-fg' : 'red-fg';
+  const state = ok ? '✓ Completed successfully' : '✗ Operation failed';
+  box.setContent(`\n{gray-fg}$ ${commandText}{/gray-fg}\n\n${cleanOutput.slice(-11000)}\n\n{${color}}${state}{/${color}}\n\n{bold}Report ID:{/bold} ${reportId}\n{bold}Exit:{/bold} ${code === null ? 'n/a' : code}\n{bold}Time:{/bold} ${elapsedMs}ms${error ? `\n{bold}Error:{/bold} ${detail}` : ''}\n\n{gray-fg}Send the Report ID and this output when reporting a failure.{/gray-fg}`);
+  footer(screen, 'Enter Back   q Quit');
+  screen.onceKey('enter', () => dashboard(screen));
   screen.render();
 }
 
@@ -167,12 +194,26 @@ function sectionMenu(screen: Screen, title: string, items: string[], actions: Ar
 }
 
 function serverMenu(screen: Screen): void {
-  sectionMenu(screen, 'Server', ['Start / Restart MCP', 'Stop MCP', 'Refresh Dashboard', 'Back'], [
-    () => runCommand(screen, ['start']),
-    () => runCommand(screen, ['service', 'stop']),
-    () => dashboard(screen),
-    () => dashboard(screen),
-  ]);
+  const installed = (() => { try { return fs.existsSync('/etc/systemd/system/remote-access-mcp.service'); } catch { return false; } })();
+  const items = installed
+    ? ['Start MCP', 'Restart MCP', 'Stop MCP', 'Service Status', 'Refresh Dashboard', 'Back']
+    : ['Start MCP (foreground)', 'Install Service', 'Refresh Dashboard', 'Back'];
+  const actions = installed
+    ? [
+        () => runCommand(screen, ['service', 'start']),
+        () => runCommand(screen, ['service', 'restart']),
+        () => runCommand(screen, ['service', 'stop']),
+        () => runCommand(screen, ['service', 'status']),
+        () => dashboard(screen),
+        () => dashboard(screen),
+      ]
+    : [
+        () => runCommand(screen, ['start']),
+        () => runCommand(screen, ['service', 'install']),
+        () => dashboard(screen),
+        () => dashboard(screen),
+      ];
+  sectionMenu(screen, 'Server', items, actions);
 }
 
 function systemMenu(screen: Screen): void {

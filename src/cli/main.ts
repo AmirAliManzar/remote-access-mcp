@@ -61,7 +61,7 @@ Audit:
 
 Service (autostart):
   service install [--domain D]  systemd (Linux) / launchd (macOS) / schtasks (Windows)
-  service uninstall | logs [-f] | status
+  service start | stop | restart | uninstall | logs [-f] | status
 
 Other:
   schedule list [--json]
@@ -585,8 +585,63 @@ function serviceIsActive(): boolean {
   return false;
 }
 
+function serviceCommand(action: 'start' | 'stop' | 'restart'): void {
+  if (hasSystemd()) {
+    if (process.getuid?.() !== 0) {
+      console.error(`service ${action} requires root (sudo).`);
+      process.exit(1);
+    }
+    try {
+      execFileSync('systemctl', [action, SERVICE_NAME], { stdio: 'inherit' });
+      console.log(`✔ ${SERVICE_NAME}: ${action} completed`);
+    } catch (e: any) {
+      const detail = String(e?.stderr || e?.stdout || e?.message || 'unknown error').trim();
+      console.error(`✖ ${SERVICE_NAME}: ${action} failed`);
+      if (detail) console.error(detail.slice(-4000));
+      process.exit(1);
+    }
+    return;
+  }
+  if (isMac()) {
+    if (!fs.existsSync(launchdFile())) {
+      console.error('launchd agent is not installed. Run `ramcp service install` first.');
+      process.exit(1);
+    }
+    try {
+      if (action === 'stop') run('launchctl', ['unload', '-w', launchdFile()]);
+      else {
+        run('launchctl', ['unload', '-w', launchdFile()]);
+        execFileSync('launchctl', ['load', '-w', launchdFile()], { stdio: 'inherit' });
+      }
+      console.log(`✔ ${SERVICE_NAME}: ${action} completed`);
+    } catch (e: any) {
+      console.error(`✖ ${SERVICE_NAME}: ${action} failed: ${e.message}`);
+      process.exit(1);
+    }
+    return;
+  }
+  if (isWindows()) {
+    if (!serviceIsInstalled()) {
+      console.error('scheduled task is not installed. Run `ramcp service install` first.');
+      process.exit(1);
+    }
+    try {
+      if (action === 'stop' || action === 'restart') execFileSync('schtasks', ['/end', '/tn', SCHTASK_NAME], { stdio: 'inherit' });
+      if (action === 'start' || action === 'restart') execFileSync('schtasks', ['/run', '/tn', SCHTASK_NAME], { stdio: 'inherit' });
+      console.log(`✔ ${SERVICE_NAME}: ${action} completed`);
+    } catch (e: any) {
+      console.error(`✖ ${SERVICE_NAME}: ${action} failed: ${e.message}`);
+      process.exit(1);
+    }
+    return;
+  }
+  console.error(`No supported service manager on ${platform()}.`);
+  process.exit(1);
+}
+
 function cmdService(args: Args): void {
   const sub = args.sub[0] || '';
+  if (sub === 'start' || sub === 'stop' || sub === 'restart') return serviceCommand(sub);
   if (sub === 'install') return installService(args);
   if (sub === 'uninstall') return uninstallService();
   if (sub === 'status') return cmdStatus();
@@ -619,7 +674,7 @@ function cmdService(args: Args): void {
     console.log(content);
     return;
   }
-  console.log('Usage: ramcp service <install [--domain D]|uninstall|logs [-f]|status>');
+  console.log('Usage: ramcp service <start|stop|restart|install [--domain D]|uninstall|logs [-f]|status>');
   process.exit(1);
 }
 

@@ -1,5 +1,16 @@
 # Changelog
 
+## 4.5.0 - TUI & CLI Reliability
+
+- Added explicit `ramcp service start|stop|restart` commands so the TUI never calls unsupported service actions.
+- TUI server actions now use the service manager when an installed service is available instead of launching a foreground gateway that can block the UI.
+- Added structured TUI operation reports with command, exit code, elapsed time, error detail, and a unique report ID for actionable failure reports.
+- Added safe handling for child-process spawn/termination errors and empty output.
+- Improved TUI header rendering to avoid duplicate branding when no subtitle is needed.
+- Improved service-operation errors with actionable root/permission and service-manager diagnostics.
+- Updated CLI help to document all service lifecycle commands.
+- Hardened operational flows so unsupported states are detected and presented instead of falling through to generic usage errors.
+
 ## 4.4.0 - TUI UX & Reliability
 
 - Fixed Blessed tag rendering so status cards and formatted values are rendered instead of showing raw markup.
@@ -13,7 +24,7 @@
 
 - Added an interactive terminal UI when `ramcp` is launched without arguments from an interactive terminal.
 - Added a guided first-run setup wizard for filesystem access and connection/tunnel selection.
-- Added a MARS-focused dashboard for MCP runtime, connection, tunnel, authentication and audit status.
+- Added an environment-focused dashboard for MCP runtime, connection, tunnel, authentication and audit status.
 - Added interactive tunnel/provider selection for Auto, Pinggy, Cloudflare, localhost.run and Direct HTTP.
 - Added TUI views for tokens/access, diagnostics and operational output while preserving the existing script-friendly CLI commands.
 - Kept TUI scope limited to Remote Access MCP; it does not act as a general server control center.
