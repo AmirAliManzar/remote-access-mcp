@@ -1,5 +1,14 @@
 # Changelog
 
+## 4.4.0 - TUI UX & Reliability
+
+- Fixed Blessed tag rendering so status cards and formatted values are rendered instead of showing raw markup.
+- Renamed the TUI header and terminal title to `Remote Access MCP`, and aligned all remaining setup-wizard wording (no stray codename).
+- Improved the dashboard to show the configured public endpoint even when the MCP server is stopped.
+- Reorganized the main navigation into Server, Connection, Access, System, and Setup sections.
+- Added dedicated Server and System menus to reduce navigation ambiguity and keep operational actions separated.
+
+
 ## 4.3.0 - TUI Experience
 
 - Added an interactive terminal UI when `ramcp` is launched without arguments from an interactive terminal.

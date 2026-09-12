@@ -10,7 +10,7 @@ import { resolveReal } from '../core/policy.js';
 import { readRuntimeState } from '../core/platform.js';
 import { startTunnelProvider, startTunnelAuto, type TunnelProviderName } from '../core/tunnel-providers.js';
 
-const APP = 'MARS';
+const APP = 'Remote Access MCP';
 const providers: Array<TunnelProviderName | 'auto'> = ['auto', 'pinggy', 'cloudflare', 'localhostrun'];
 
 type Screen = blessed.Widgets.Screen;
@@ -26,7 +26,7 @@ const glyph = {
 function makeScreen(): Screen {
   const screen = blessed.screen({
     smartCSR: true,
-    title: 'MARS · Remote Access MCP',
+    title: 'Remote Access MCP',
     fullUnicode: true,
     dockBorders: true,
     cursor: { artificial: true, blink: true, shape: 'line', color: 'cyan' },
@@ -62,6 +62,7 @@ function card(parent: Screen | Box, title: string, top: number, left: string | n
     parent,
     top, left, width, height,
     label: ` ${title} `,
+    tags: true,
     border: { type: 'line' },
     padding: { left: 1, right: 1 },
     style: { border: { fg: 'gray' }, label: { fg: 'cyan' }, fg: 'white' },
@@ -95,20 +96,20 @@ function dashboard(screen: Screen): void {
   ].join('\n'));
 
   const publicBox = card(screen, 'PUBLIC ENDPOINT', 4, '51%', '48%', 11);
-  const publicUrl = rt?.tunnel_url || rt?.direct_url || (cfg.public_host ? `https://${cfg.public_host}` : '—');
-  publicBox.setContent(`\n {bold}{cyan-fg}${publicUrl}{/cyan-fg}{/bold}\n\n {gray-fg}${rt ? 'Live runtime endpoint' : 'No live endpoint'}{/gray-fg}`);
+  const publicUrl = rt?.tunnel_url || rt?.direct_url || (cfg.public_host ? `https://${cfg.public_host}${cfg.mcp_path}` : '—');
+  const endpointState = rt?.tunnel_url || rt?.direct_url ? 'Live runtime endpoint' : cfg.public_host ? 'Configured endpoint · server currently stopped' : 'No public endpoint configured';
+  publicBox.setContent(`\n {bold}{cyan-fg}${publicUrl}{/cyan-fg}{/bold}\n\n {gray-fg}${endpointState}{/gray-fg}`);
 
   const menu = blessed.list({
     parent: screen, top: 16, left: 1, width: '98%', height: 10,
     label: ' MENU ', border: { type: 'line' },
     keys: true, vi: false, mouse: false,
     items: [
-      'Start / Restart MCP',
-      'Tunnel & Connection',
-      'Setup & Configuration',
-      'Tokens & Access',
-      'Diagnostics',
-      'Logs',
+      'Server',
+      'Connection',
+      'Access',
+      'System',
+      'Setup',
       'Quit',
     ],
     style: {
@@ -121,12 +122,11 @@ function dashboard(screen: Screen): void {
   screen.append(menu);
   menu.focus();
   menu.on('select', (_item, index) => {
-    if (index === 0) runCommand(screen, ['start']);
+    if (index === 0) serverMenu(screen);
     else if (index === 1) tunnelMenu(screen);
-    else if (index === 2) wizard(screen);
-    else if (index === 3) tokenMenu(screen);
-    else if (index === 4) diagnostics(screen);
-    else if (index === 5) logs(screen);
+    else if (index === 2) tokenMenu(screen);
+    else if (index === 3) systemMenu(screen);
+    else if (index === 4) wizard(screen);
     else process.exit(0);
   });
   screen.render();
@@ -151,6 +151,36 @@ function runCommand(screen: Screen, args: string[]): void {
     screen.render();
   });
   screen.render();
+}
+
+function sectionMenu(screen: Screen, title: string, items: string[], actions: Array<() => void>): void {
+  screen.children.slice(0).forEach(c => c !== screen && c.destroy());
+  header(screen, title);
+  const list = blessed.list({
+    parent: screen, top: 5, left: 3, width: '94%', height: Math.min(items.length + 4, 16),
+    label: ` ${title.toUpperCase()} `, border: { type: 'line' }, keys: true, tags: true,
+    items,
+    style: { border: { fg: 'gray' }, selected: { bg: 'cyan', fg: 'black', bold: true }, item: { fg: 'white' } },
+  });
+  footer(screen); screen.append(list); list.focus(); screen.render();
+  list.on('select', (_item, index) => actions[index]?.());
+}
+
+function serverMenu(screen: Screen): void {
+  sectionMenu(screen, 'Server', ['Start / Restart MCP', 'Stop MCP', 'Refresh Dashboard', 'Back'], [
+    () => runCommand(screen, ['start']),
+    () => runCommand(screen, ['service', 'stop']),
+    () => dashboard(screen),
+    () => dashboard(screen),
+  ]);
+}
+
+function systemMenu(screen: Screen): void {
+  sectionMenu(screen, 'System', ['Diagnostics', 'Logs', 'Back'], [
+    () => diagnostics(screen),
+    () => logs(screen),
+    () => dashboard(screen),
+  ]);
 }
 
 function tunnelMenu(screen: Screen): void {
@@ -189,7 +219,7 @@ function wizard(screen: Screen): void {
   if (cfgExists) {
     const cfg = loadConfig();
     const box = card(screen, 'SETUP', 5, 3, '94%', 13);
-    box.setContent(`\n {bold}MARS is already configured.{/bold}\n\n Config: {cyan-fg}${configPath()}{/cyan-fg}\n Tokens: ${cfg.tokens.length}\n Endpoint: ${cfg.host}:${cfg.port}${cfg.mcp_path}\n\n Re-run setup and keep the existing token?`);
+    box.setContent(`\n {bold}Remote Access MCP is already configured.{/bold}\n\n Config: {cyan-fg}${configPath()}{/cyan-fg}\n Tokens: ${cfg.tokens.length}\n Endpoint: ${cfg.host}:${cfg.port}${cfg.mcp_path}\n\n Re-run setup and keep the existing token?`);
     const list = blessed.list({ parent: box, top: 8, left: 2, width: '96%', height: 4, keys: true, items: ['Continue setup', 'Back'], style: { selected: { bg: 'cyan', fg: 'black', bold: true } } });
     screen.append(list); list.focus(); footer(screen); screen.render();
     list.once('select', (_x, i) => i === 0 ? setupPaths(screen, cfg) : dashboard(screen));
@@ -223,7 +253,7 @@ function setupTunnel(screen: Screen): void {
   screen.children.slice(0).forEach(c => c !== screen && c.destroy());
   header(screen, 'Setup · Connection');
   const list = blessed.list({ parent: screen, top: 6, left: 4, width: '92%', height: 11,
-    label: ' How should MARS connect? ', border: { type: 'line' }, keys: true,
+    label: ' How should the gateway connect? ', border: { type: 'line' }, keys: true,
     items: ['Local only', 'Auto-select public tunnel', 'Pinggy', 'Cloudflare', 'localhost.run'],
     style: { border: { fg: 'gray' }, selected: { bg: 'cyan', fg: 'black', bold: true } } });
   footer(screen); screen.append(list); list.focus(); screen.render();
@@ -237,7 +267,7 @@ function finishWizard(screen: Screen, tunnel: boolean, provider?: TunnelProvider
   screen.children.slice(0).forEach(c => c !== screen && c.destroy());
   header(screen, 'Setup · Complete');
   const box = card(screen, 'READY', 5, 3, '94%', 13);
-  box.setContent('\n {bold}{green-fg}✓ MARS configuration saved{/green-fg}{/bold}\n\n Start the MCP server now?');
+  box.setContent('\n {bold}{green-fg}✓ Remote Access MCP configuration saved{/green-fg}{/bold}\n\n Start the MCP server now?');
   const list = blessed.list({ parent: box, top: 6, left: 2, width: '96%', height: 5, keys: true,
     items: ['Start now', 'Open dashboard', 'Exit'], style: { selected: { bg: 'cyan', fg: 'black', bold: true } } });
   screen.append(list); list.focus(); footer(screen); screen.render();
