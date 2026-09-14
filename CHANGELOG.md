@@ -1,5 +1,12 @@
 # Changelog
 
+## 4.5.0 - Public Documentation & Agentic Positioning
+
+- Reworked the public README around the core mission: turning MCP-compatible chatbots into practical agents that can operate on real laptops, desktops, VMs, and servers.
+- Documented cross-platform usage, agentic workflows, security boundaries, background jobs, parallel execution, automation, plugins, and integrations.
+- Added concise localized README editions for Persian, Chinese, Turkish, Russian, and Arabic audiences.
+- Updated npm package description to clearly communicate the agentic machine-access use case.
+
 ## 4.5.0 - TUI & CLI Reliability
 
 - Added explicit `ramcp service start|stop|restart` commands so the TUI never calls unsupported service actions.

@@ -1,393 +1,407 @@
-# remote-access-mcp
+# Remote Access MCP
 
-[![npm version](https://img.shields.io/npm/v/remote-access-mcp.svg)](https://www.npmjs.com/package/remote-access-mcp)
-[![CI](https://github.com/AmirAliManzar/remote-access-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/AmirAliManzar/remote-access-mcp/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+<p align="center">
+  <strong>Give your AI assistant real access to your computer.</strong><br>
+  Turn ChatGPT, Claude, Grok, Qwen Desktop, and other MCP clients into an agent that can work on your laptop, desktop, VM, or server.
+</p>
 
-Turn any machine into a secure AI-agent-accessible endpoint via the [Model Context Protocol](https://modelcontextprotocol.io) (MCP).
+<p align="center">
+  <a href="https://www.npmjs.com/package/remote-access-mcp"><img src="https://img.shields.io/npm/v/remote-access-mcp.svg" alt="npm"></a>
+  <a href="https://github.com/AmirAliManzar/remote-access-mcp/actions/workflows/ci.yml"><img src="https://github.com/AmirAliManzar/remote-access-mcp/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/AmirAliManzar/remote-access-mcp/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-yellow.svg" alt="MIT"></a>
+  <img src="https://img.shields.io/badge/Node.js-18%2B-339933.svg" alt="Node.js 18+">
+</p>
 
-ChatGPT (Developer Mode), Claude, Grok, and any MCP-compatible client connect over HTTPS and securely control your server: read/write files, run shell commands, manage services, query databases, audit everything — all behind per-token permissions.
+> **The idea:** Your chatbot already knows how to reason. Remote Access MCP gives that reasoning a controlled pair of hands on a machine you own.
 
-**Zero Python. Zero Docker. Just Node.js.**
+## What is Remote Access MCP?
 
-```bash
-npm install -g remote-access-mcp
-ramcp init
+[Model Context Protocol (MCP)](https://modelcontextprotocol.io/) lets AI applications use external tools and data. **Remote Access MCP is the bridge between an MCP-compatible AI client and a real machine.**
+
+Install it on a laptop, desktop, VM, home server, cloud server, or development box. Connect your AI client, grant it only the directories and capabilities it needs, and let the agent actually do the work.
+
+Instead of:
+
+> "Here is the error. Tell me what command I should run."
+
+You can have an agentic workflow:
+
+> "Inspect the project, reproduce the bug, edit the files, run the tests, check the logs, fix the issue, and tell me exactly what changed."
+
+The AI can perform the loop instead of merely describing it.
+
+### From chatbot to agent
+
+```text
+┌──────────────────────┐
+│  ChatGPT / Claude    │
+│  Grok / Qwen / etc.  │
+└──────────┬───────────┘
+           │ MCP / HTTPS
+           ▼
+┌──────────────────────────────┐
+│      Remote Access MCP       │
+│ auth · policy · audit · jobs  │
+└──────────────┬───────────────┘
+               │ controlled tools
+       ┌───────┼────────┬──────────┐
+       ▼       ▼        ▼          ▼
+    Files    Shell    Git      Browser
+       │       │        │          │
+       └───────┴────────┴──────────┘
+                    ▼
+             Your real machine
 ```
 
+## What can the agent actually do?
 
-### Direct HTTP fallback
+Depending on the permissions you grant, an MCP client can:
 
-When no tunnel provider is available, Direct HTTP can expose the gateway on a randomly selected high dynamic port. MARS never claims common public/service ports such as 80, 443, 8443, 2083, 2087, or 2096 for this feature. On Linux, UFW is updated automatically when available, and the listener is health-checked before its connector URL is printed.
+- inspect and understand a codebase
+- create, edit, move, and delete files
+- upload and download binary files
+- run tests, linters, builds, scripts, and development commands
+- inspect processes, disks, network interfaces, logs, and services
+- work with Git repositories
+- query SQLite, MySQL, PostgreSQL, and Redis through controlled adapters
+- inspect HTTP endpoints and browser pages
+- create background jobs and run bounded tasks in parallel
+- schedule recurring work and react to webhooks, file, and health events
+- diagnose infrastructure and common Docker/Kubernetes environments
+- create snapshots and roll back risky filesystem changes
+- use optional Context7, Codebase Memory, and other MCP integrations
 
-```bash
-ramcp start --direct
-ramcp tunnel --provider auto
-ramcp tunnel --direct
-ramcp url
-```
+That means the AI can follow a real **observe → plan → change → test → verify** loop.
 
-Auto mode remembers the last successful tunnel provider and tries it first on the next start, reducing unnecessary link changes. Provider-generated free tunnel hostnames can still change when the provider itself does not offer persistent hostnames.
+## Why this is different
 
-## Why
+Most AI chat experiences stop at generated text. Coding agents improve that by giving the model a workspace. Remote Access MCP takes the same idea to **the machine itself** while keeping the operator in control.
 
-AI assistants are great, but they're sandboxed away from your infrastructure. This gateway flips that: your chatbot *becomes* the ops engineer. "Check why the disk is filling up, fix it, and show me the logs" becomes an actual conversation.
+It is designed for:
 
-The server binds to `127.0.0.1` only. You put it behind nginx (with Cloudflare or any TLS edge in front) and expose exactly one HTTPS endpoint to the world. Every request carries a token — as an `Authorization: Bearer` header or embedded in the URL path (`/<token>/mcp`) for clients like ChatGPT's connectors that can't set custom headers.
+- 💻 **Laptops & desktops** — let your AI work on your local development environment.
+- 🖥️ **Servers** — inspect services, logs, deployments, files, and infrastructure remotely.
+- 🧪 **Development & CI environments** — build, test, diagnose, and verify instead of guessing.
+- 🏠 **Home labs & self-hosted systems** — connect an AI client without building a custom agent platform.
+- ☁️ **Cloud VMs** — expose a controlled MCP endpoint without handing over an unrestricted SSH account.
 
-## Parallel execution & background workers
+### Cross-platform
 
-Remote Access MCP includes a bounded local worker pool for long-running or parallel operations. Use `run_background` for asynchronous commands and `run_parallel` for multiple commands. Jobs have persistent metadata, output capture, cancellation, timeouts, retry limits, and per-token ownership.
+The core gateway is designed for **Linux, macOS, and Windows** with Node.js 18+.
 
-## Safe operations
-
-- Binary-safe `upload_file` / `download_file` with size limits and SHA-256 verification.
-- Approval-required shell mode and command allowlists.
-- Managed filesystem change sets with durable pre-mutation capture, create/delete tracking, resumable rollback, and atomic per-path restore.
-- Token roles: `auditor`, `developer`, `deployer`, `admin`.
-
-## Diagnostics & extensibility
-
-- Structured system/service diagnostics and persistent health watchers with webhook alerts.
-- MySQL/PostgreSQL/Redis query and schema tools using credentials held in environment variables.
-- MCP Resources and Prompts for operational context.
-- Isolated local plugin lifecycle: manifests are validated and fingerprinted, plugin tools are namespaced, and installed plugins run out-of-process behind Node's filesystem permission model plus a Linux network sandbox. Plugin access requires the `plugins` scope; untrusted or unverifiable plugins are skipped fail-closed.
-
-## Install
-
-### Any machine with Node.js 18+ — Linux, macOS, or Windows
-
-The core gateway supports Node.js 18 and newer. Optional MCP integrations may have higher runtime requirements; on Node.js 18 they are skipped when their packages cannot run, while the core gateway remains available.
-
-```bash
-npm install -g remote-access-mcp
-ramcp init
-```
-
-### One-liner (Ubuntu/Debian servers)
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/AmirAliManzar/remote-access-mcp/main/install.sh | bash
-ramcp init
-```
-
-### Manual
-
-```bash
-npm install -g remote-access-mcp
-ramcp init
-```
+- Linux → systemd when you want a persistent service
+- macOS → launchd when you want a persistent service
+- Windows → Scheduled Tasks when you want a persistent service
+- Any platform → foreground mode or supported tunnel/direct connection
 
 ## Quick start
 
-On a **server** with a domain:
+### 1. Install
 
 ```bash
-ramcp init                          # config + first token
-ramcp policy allow /srv/myapp       # what the AI may touch
-ramcp policy shell on               # let it run commands (optional)
-ramcp service install --domain mcp.example.com   # systemd + nginx
-ramcp doctor                        # verify everything end-to-end
-ramcp url                           # connector URL for your chatbot
+npm install -g remote-access-mcp
 ```
 
-On a **laptop or desktop** (no domain, no port forwarding):
+Or on Ubuntu/Debian:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/AmirAliManzar/remote-access-mcp/main/install.sh | bash
+```
+
+### 2. Initialize
+
+```bash
+ramcp init
+```
+
+`ramcp` is the CLI and interactive TUI (terminal user interface). Run it with no arguments in an interactive terminal to open the guided interface.
+
+### 3. Decide what the AI may access
+
+Start narrow. For example:
+
+```bash
+ramcp policy allow ~/Projects/my-app
+ramcp policy shell on
+```
+
+You can create separate tokens for separate agents or use cases:
+
+```bash
+ramcp token add --name developer \
+  --paths ~/Projects/my-app \
+  --scopes filesystem,git,shell \
+  --shell
+```
+
+### 4. Connect your AI client
+
+For a client that accepts a token in the URL:
+
+```text
+https://your-host/<token>/mcp
+```
+
+For clients that support an Authorization header:
+
+```text
+https://your-host/mcp
+Authorization: Bearer <token>
+```
+
+Use:
+
+```bash
+ramcp url
+```
+
+to print the connector URL for the current runtime.
+
+## Laptop / desktop: no domain required
+
+You do not need to buy a domain or configure port forwarding just to experiment.
 
 ```bash
 ramcp tunnel
-# → downloads cloudflared on first run (no account needed),
-#   prints a public https URL like https://random-words.trycloudflare.com
-# `ramcp url` in another terminal shows the live connector link.
 ```
 
-Works the same on Windows, macOS, and Linux — PowerShell/cmd on Windows,
-launchd on macOS, systemd on Linux for the autostart service.
+Remote Access MCP can use a supported tunnel provider and print a public HTTPS endpoint. Auto mode remembers the last successful provider and prefers it on the next run.
 
-## Commands
+You can also use direct HTTP when appropriate:
 
-| Command | Description |
+```bash
+ramcp tunnel --direct
+```
+
+Direct mode chooses a high dynamic port rather than common service ports and performs availability/health checks before presenting the endpoint.
+
+> Free tunnel providers may assign a new hostname after a tunnel is recreated. A provider's free tier controls hostname persistence, not Remote Access MCP.
+
+## Server deployment
+
+For a Linux server with a domain:
+
+```bash
+ramcp init
+ramcp policy allow /srv/myapp
+ramcp policy shell on
+ramcp service install --domain mcp.example.com
+ramcp doctor
+ramcp url
+```
+
+The service setup is intended to keep the gateway local and put your chosen HTTPS edge/reverse proxy in front of it.
+
+## Agentic workflows
+
+Remote Access MCP is not just a collection of shell wrappers. The toolset is designed so an AI agent can complete multi-step work.
+
+### Example: fix a failing project
+
+```text
+User:
+  "The tests are failing. Find the cause, fix it, run the relevant tests,
+   and verify that the fix didn't break anything else."
+
+Agent:
+  1. Inspect project structure
+  2. Read relevant files
+  3. Run the failing test
+  4. Inspect output/logs
+  5. Edit the code
+  6. Run focused tests
+  7. Run broader verification
+  8. Report files changed + results
+```
+
+### Example: investigate a server
+
+```text
+"Why is this server slow? Check CPU, RAM, disk, processes, network,
+logs and services. Identify the bottleneck and propose or perform the
+lowest-risk fix, then verify the result."
+```
+
+### Example: build something
+
+```text
+"Create the project in /srv/demo, install its dependencies, implement
+the feature, run the tests and leave me a working build."
+```
+
+The important difference is that the model gets **tools + state + feedback**, so it can iterate against the real environment.
+
+## Safety model
+
+Remote Access MCP is deliberately permission-oriented. Installing it does **not** mean giving an AI unrestricted root access.
+
+### Per-token permissions
+
+Tokens can have:
+
+- allowed paths
+- explicit denied paths
+- tool scopes
+- roles: `auditor`, `developer`, `deployer`, `admin`
+- shell permission
+- command allowlists
+- read-only mode
+- request-rate limits
+- expiration
+
+Example read-only token:
+
+```bash
+ramcp token add \
+  --name auditor \
+  --paths /srv/myapp \
+  --scopes filesystem,git \
+  --read-only
+```
+
+### Defense in depth
+
+The project includes protections such as:
+
+- path resolution that handles `..` and symlinks before policy checks
+- deny rules that win over allow rules
+- timing-safe token verification
+- secret redaction in operational output
+- SSRF protections for private/loopback/cloud metadata ranges
+- Git command/argument validation
+- SQLite single-statement restrictions and blocked `ATTACH`
+- protected service/process controls
+- bounded command output and timeouts
+- persistent audit logging with hash-chain verification
+- filesystem snapshots and rollback support
+- optional plugin isolation with fail-closed behavior
+- autonomous recovery disabled by default
+
+**Security is not a promise that an AI can never make a mistake. The goal is to make its capabilities explicit, bounded, observable, and revocable.**
+
+See [SECURITY.md](SECURITY.md) for the security model and reporting guidance.
+
+## Background jobs & parallel work
+
+Long-running work does not have to block the request that started it.
+
+The gateway provides bounded worker execution for:
+
+- background commands
+- parallel operations
+- retries with limits
+- cancellation
+- timeouts
+- captured output
+- persistent job metadata
+- per-token ownership
+
+This is useful when an agent needs to build/test several components, wait for a long-running task, or perform independent checks concurrently.
+
+## Automation & events
+
+Automation rules can be triggered by intervals and supported tool, webhook, file, and health events. Actions still pass through the normal token policy, scopes, read-only controls, and audit layer.
+
+This lets you build workflows such as:
+
+```text
+webhook → inspect deployment → run health checks → collect logs → notify
+```
+
+or:
+
+```text
+health event → bounded recovery action → verify → record incident
+```
+
+Autonomous recovery is disabled by default and requires explicit operator configuration.
+
+## Plugins & integrations
+
+Optional integrations can extend the gateway without making them mandatory for the core runtime.
+
+Supported/available integrations include:
+
+- **Context7** for library/documentation context
+- **Codebase Memory** for repository-aware code context
+- **Context Mode** as an optional local integration
+- local plugins with validation, fingerprints, namespaced tools, and isolation controls
+
+Each Remote Access MCP instance can keep its Codebase Memory runtime/data/cache identity isolated from other applications on the same machine.
+
+## CLI & TUI
+
+The command line remains script-friendly while the interactive terminal UI provides a guided operator experience.
+
+```bash
+ramcp                 # interactive TUI in a real terminal
+ramcp doctor          # diagnose the environment
+ramcp status          # runtime/service summary
+ramcp service status  # service state
+ramcp service logs -f # follow logs
+ramcp tunnel          # public connection
+ramcp url             # current connector URL
+ramcp token list      # token fingerprints
+ramcp audit --verify  # verify audit hash chain
+```
+
+The TUI is an operator interface, not a general server-control center. It focuses on configuring, starting, connecting, securing, diagnosing, and operating Remote Access MCP itself.
+
+## Core capabilities
+
+Remote Access MCP includes a broad operational toolkit covering:
+
+| Area | Examples |
 |---|---|
-| `ramcp init` | Generate config + first token. Safe to re-run. |
-| `ramcp start [--read-only]` | Run in the foreground. |
-| `ramcp url [token]` | Connector URL for a chatbot. |
-| `ramcp doctor` | One-pass diagnosis: tokens, port, gateway, nginx, public URL, audit chain. |
-| `ramcp status` | Service + config summary. |
-| `ramcp token list [--json]` | All tokens (fingerprints only). |
-| `ramcp token add --name N` | Create a scoped token — see options below. |
-| `ramcp token rotate [name]` | Rotate a token (old one dies instantly). |
-| `ramcp token revoke name` | Delete a token. |
-| `ramcp policy [token]` | Show/set path policy, shell flag. |
-| `ramcp policy readonly on` | Global kill-switch for ALL mutating tools. |
-| `ramcp audit [--tool T]` | Query the audit log. `--verify` checks the hash chain. |
-| `ramcp service install` | systemd unit (+ nginx vhost with `--domain`). |
-| `ramcp service logs -f` | Tail gateway logs. |
-| `ramcp schedule list` | List scheduled tasks. |
-| `ramcp webhook add --url URL --events EVENTS` | Add a webhook subscription. |
-| `ramcp webhook list` | List configured webhooks. |
-| `ramcp webhook on URL` / `off URL` | Enable or disable a webhook. |
-| `ramcp webhook remove URL` | Remove a webhook. |
-| `ramcp config export --out FILE` | Export configuration and credentials for backup. |
-| `ramcp config import FILE [--merge]` | Restore or merge a configuration backup. |
-| `ramcp tunnel` | Start a temporary public tunnel. |
+| Filesystem | list, read, write, edit, delete, search, upload/download |
+| Shell | controlled commands, process listing, process termination |
+| System | system info, disk usage, network interfaces |
+| HTTP | requests, port checks, web fetching with SSRF guards |
+| Git | validated repository operations |
+| Databases | SQLite, MySQL, PostgreSQL, Redis |
+| Logs | files and journal/service logs |
+| Services | status and controlled actions |
+| Packages | inspect/install/remove with protected system packages |
+| Planning | task plans, snapshots, rollback |
+| Scheduling | persistent bounded scheduled tasks |
+| Automation | event-driven rules and webhooks |
+| Browser | optional browser open/extract/screenshot capabilities |
+| Infrastructure | Docker/Kubernetes/Cloudflare diagnostics where the local CLI is available |
+| Security | secret scanning, local port scanning, audit verification |
 
-### `token add` options
+The exact built-in tool surface can evolve between releases; use the installed version's `doctor`, documentation, and MCP tool list as the source of truth.
 
-Role and shell controls can be combined with `--role auditor|developer|deployer|admin`, `--commands git,npm` and `--approval required|auto`. Roles act as permission ceilings; explicit token scopes can further restrict a role.
+## Requirements
 
-```bash
-ramcp token add --name chatgpt \
-  --paths /srv/app \        # allowed directories (symlink-safe)
-  --deny /srv/app/.env \    # explicitly denied (deny always wins)
-  --shell \                 # allow shell commands (default: off)
-  --scopes filesystem,git \ # limit to tool groups (default: all)
-  --read-only \             # refuse every mutating tool
-  --rpm 30 \                # max requests per minute
-  --expires 2026-12-31      # auto-expiry
-```
+- Node.js **18+** for the core gateway
+- Linux, macOS, or Windows
+- An MCP-compatible client for agent interaction
+- Optional system utilities depending on the capabilities you want to use
 
-Example — a token that can only read files, never write or execute:
+No Python runtime and no Docker runtime are required for the core gateway.
+
+## Open source
+
+Remote Access MCP is MIT licensed and intended to be useful as infrastructure for developers, self-hosters, AI-agent builders, and automation projects.
 
 ```bash
-ramcp token add --name auditor --paths /srv --scopes filesystem --read-only
-```
-
-## Connecting your chatbot
-
-### ChatGPT (Developer Mode → Connectors)
-
-```
-https://your-domain.com/<token>/mcp
-```
-
-Get it ready-made: `ramcp url`
-
-### Claude / any MCP client with header support
-
-Endpoint `https://your-domain.com/mcp` + header `Authorization: Bearer <token>`
-
-## Tools (101 built-in operational tools, plus optional integration tools)
-
-The built-in tool count is stable. Optional MCP integrations can add additional namespaced tools when their upstream packages are available.
-
-**Filesystem** (7) `list_directory` `read_file` (offset/limit) `write_file` `edit_file` `delete_path` `search_code` `file_info`
-
-**Shell** (3) `run_command` (opt-in, timeout, output cap) `process_list` `kill_process` (refuses gateway/PID 1)
-
-**System** (3) `system_info` `disk_usage` `network_interfaces`
-
-**HTTP** (3) `http_request` `port_check` `web_fetch` — all SSRF-guarded: loopback, private ranges, and cloud metadata endpoints are refused
-
-**Git** (1) `git` — verb-whitelisted; option injection (`--upload-pack`) and shell metacharacters blocked
-
-**SQLite** (2) `sqlite_query` `sqlite_schema` — single-statement, ATTACH blocked
-
-**Logs** (3) `tail_logs` `search_logs` `journal` (unit name validated)
-
-**Services** (2) `service_status` `service_action` — protected units (ssh, gateway itself, targets) refused
-
-**Packages** (3) `package_list` `package_install` `package_remove` (refuses nodejs/nginx/ssh)
-
-**Scheduler** (3) `schedule_command` `list_scheduled_tasks` `cancel_scheduled_task` — min 60s intervals, shell-token-gated
-
-**Security** (2) `secret_scan` (10 credential patterns, masked output) `port_scan_local`
-
-**Project** (2) `analyze_project` `project_health_check`
-
-**Planning** (4) `create_task_plan` `task_status` `workspace_snapshot` `rollback_changes` — snapshot before risky edits, roll back atomically
-
-**Policy** (4) `list_allowed_paths` `allow_path` `deny_path` `shell_enabled` — each token manages only its own sandbox
-
-**Operations** (2) `environment_inspect` `nginx_inspect`
-
-**Browser** (3) `browser_open` `browser_extract` `browser_screenshot` — optional Playwright runtime; public-URL SSRF guard; screenshots must stay inside the token path sandbox
-
-**Infrastructure** (9) `infra_probe` `docker_ps` `docker_inspect` `docker_logs` `docker_action` `kubernetes_get` `kubernetes_describe` `kubernetes_logs` `cloudflare_status` — fixed executables and validated arguments; missing CLIs degrade cleanly
-
-**Database** (2) `database_query` `database_schema` — MySQL/PostgreSQL/Redis support already provided by the existing adapter
-
-## Automation & Events
-
-Automation rules are persistent, token-isolated workflows triggered by intervals or tool/webhook/file/health events. They support typed conditions, bounded action lists, manual triggering, enable/disable/delete lifecycle, execution counters, and webhook outcome notifications. Every action is executed through the normal token policy/read-only/audit wrapper; automation cannot invoke control-plane, approval, or plugin lifecycle tools. File triggers are constrained by the owner's path policy, payloads are bounded, and recursive automation chains are capped.
-
-For external events, an authenticated webhook can POST to `/<token>/automation/webhook` with a JSON body such as `{"type":"deploy.finished","data":{"service":"api"}}`. The token selects the owner's rules; the token is never copied into the event payload. Scheduler/file/health execution is persistent and protected by a cross-process execution claim so multiple gateway processes do not intentionally execute the same rule concurrently.
-
-## Security & Autonomous Operations
-
-Phase 7 adds `security_analysis` and `autonomy_check` plus bounded self-healing
-through `recovery_rule_create`, `recovery_rule_list`, `recovery_incidents`, and
-`recovery_trigger`. Recovery state is persistent and token-isolated, with
-maximum attempts and cooldowns. Autonomous operations are **disabled by
-default** and require `RAMCP_AUTONOMOUS=1`; high-risk and critical recovery
-also require their respective explicit environment flags. Recovery actions use
-the same policy, scope, read-only, audit, and context-wrapped tool execution as
-normal requests, and cannot invoke approvals, plugins, automation lifecycle,
-or recovery lifecycle tools.
-
-## Plugin Isolation & Ecosystem
-
-Plugins are local, explicit installations. A plugin directory must contain a
-`manifest.json` with a semver-like `version` and a relative `entry` exporting
-`register(server, ctx)`. The gateway validates the tree, rejects symlinks and
-oversized packages, stores a SHA-256 fingerprint, and verifies that fingerprint
-before every child-process start. Plugin tools are exposed as
-`plugin_<name>__<tool>` and require the `plugins` token scope; declared plugin
-scopes must also be available to the token.
-
-Example manifest:
-
-```json
-{
-  "name": "my-plugin",
-  "version": "1.0.0",
-  "entry": "index.js",
-  "permissions": ["fs.write"],
-  "scopes": ["filesystem"]
-}
-```
-
-Runtime permissions are deliberately small: `fs.read` permits reads inside
-the plugin directory, `fs.write` permits writes only under the plugin's
-`data/` directory, and `process` permits child processes. Network access is
-disabled by default. On Linux the child also gets a separate network namespace
-and deny-by-default network filter. If the required sandbox is unavailable,
-the plugin is skipped unless `RAMCP_PLUGIN_UNSANDBOXED=1` is explicitly set by
-the operator. Plugin calls are short-lived and have a bounded execution time;
-there are no persistent plugin worker processes.
-
-The plugin host receives no token secret and no gateway mutation API. This is
-an intentional break from the old in-process `trusted: true` model: declaring
-trust inside a manifest is not considered a security boundary.
-
-## Webhooks
-
-Get notified when tools run (or fail) — incident bots, Slack relays, anything that accepts a POST:
-
-```bash
-ramcp webhook add --url https://hooks.example.com/ramcp --events tool.error
-ramcp webhook list
-```
-
-Fire-and-forget: a dead endpoint never delays a tool call (5s cap, deduped within 10s).
-
-## Backup & restore
-
-```bash
-ramcp config export --out backup.json     # full snapshot, 0600 perms — contains live tokens!
-ramcp config import backup.json           # replace
-ramcp config import backup.json --merge   # union: keeps local identity, adds new tokens/hosts/hooks
-```
-
-> ⚠️ **Security warning:** configuration exports contain active authentication tokens. Treat backup files as secrets: never commit them to Git, upload them to issue trackers, or share them publicly. Store them with restricted permissions and rotate tokens if a backup is exposed.
-
-## Security model
-
-- **Loopback only.** The gateway listens on `127.0.0.1` — unreachable directly from the network.
-- **Timing-safe token auth** on every request; tokens never appear in logs (audits store fingerprints).
-- **Per-token sandbox.** Path policy resolves symlinks and collapses `..` before checking; deny always wins.
-- **Per-token scopes + read-only + rate limit + expiry.** Least privilege by construction.
-- **SSRF guards** on all outbound fetch tools — the AI can't reach your metadata endpoints or internal services.
-- **Injection guards.** git verbs whitelisted, SQL single-statement, ATTACH blocked, unit names validated.
-- **Tamper-evident audit.** Every tool invocation → append-only JSONL with a hash chain; `ramcp audit --verify` detects deletions/edits. Secrets in arguments are redacted before storage.
-- **Hot-reload.** Policy edits apply on the next request — no restart, no downtime.
-- **Global read-only** kill-switch: `ramcp policy readonly on`.
-
-You provide TLS (nginx + Cloudflare/Let's Encrypt). The gateway speaks plain HTTP on loopback, like every other loopback service.
-
-## FAQ
-
-**Is exposing a shell to an AI safe?**
-It's exposing a shell to *you*, via the AI as the interface. Least-privilege tokens, scoped tools, off-by-default shell, tamper-evident audit, and a read-only mode give you dials that raw SSH doesn't.
-
-**Stateless sessions?**
-Each request builds a fresh MCP transport. No session state to corrupt, trivially scalable, and it's the mode ChatGPT's connector flow works best with.
-
-**Where does config live?**
-`~/.config/remote-access-mcp/config.json` (0600) + `audit.db` + `schedule.json` alongside it.
-
-## Development
-
-```bash
-git clone https://github.com/AmirAliManzar/remote-access-mcp
+git clone https://github.com/AmirAliManzar/remote-access-mcp.git
 cd remote-access-mcp
-npm ci && npm run build && npm test
+npm install
+npm test
+npm run build
 ```
 
-The test suite covers policy enforcement, authentication, transport compatibility (stateful, stateless, legacy SSE), cross-platform behavior, tunnel wiring, webhooks, configuration backup, CLI lifecycle, and crash regressions. CI runs on Node.js 18, 20, and 22.
+Contributions, bug reports, security reports, ideas, and real-world agent workflows are welcome.
+
+## Documentation
+
+- [Persian README](README.fa.md)
+- [Roadmap](ROADMAP.md)
+- [Security](SECURITY.md)
+- [Changelog](CHANGELOG.md)
+- [Contributing](CONTRIBUTING.md)
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
-
----
-
-📚 [README فارسی](README.fa.md) | [Roadmap](ROADMAP.md) | [Security Policy](SECURITY.md) | [Changelog](CHANGELOG.md) | [Contributing](CONTRIBUTING.md)
-
-## Capability Router & Context Efficiency
-
-Phase 2 adds a capability catalog and discovery layer for agent clients:
-`capability_discover` returns only capabilities authorized for the current
-token and includes context-cost and latency hints. `capability_batch` runs up
-to eight independent read-only calls in parallel and rejects mutating actions.
-
-For tokens with explicit scopes, `RAMCP_TOOL_EXPOSURE=scoped` can also reduce
-`tools/list` itself to the authorized tool set. The default remains `all` for
-backward compatibility. In the built-in benchmark, a scoped token exposed
-14 tools instead of 77 and reduced the serialized `tools/list` response by
-80.3% (30,802 → 6,054 bytes).
-
-## Task / Workflow / Agent Engine
-
-Phase 3 adds durable orchestration through the `task` tool. A task contains a
-validated action graph and can run independent actions in parallel while
-respecting dependencies, retries, per-action timeouts, verification hooks,
-dry-run mode, and compensation rollback. `supervised` tasks pause before
-mutating actions and resume through `task_approve`; interrupted/failed tasks
-can be resumed with `task_resume` because task state is persisted under RAMCP's
-own data directory and isolated by token.
-
-Specialized profiles are available through `agent_profiles` and optional action
-assignment: `explorer`, `planner`, `implementer`, `tester`, `reviewer`,
-`security`, and `deployer`. Profiles constrain capability scopes and autonomy;
-they are deterministic execution roles, not hidden model instances. The
-existing `task_status` tool remains backward compatible with plan tracking and
-also reports workflow tasks.
-
-## Developer Intelligence
-
-Phase 4 adds a compact developer-intelligence layer without replacing the existing policy core:
-
-- `project_profile` / `project_profile_list` / `project_profile_set` keep per-token workspace knowledge under RAMCP's own data directory.
-- `impact_analysis` builds a lightweight reverse dependency graph for changed source files.
-- `git_intelligence` summarizes repository state, history, diff statistics, branches, and remotes without permitting arbitrary Git verbs.
-- `github_repo`, `github_issues`, and `github_pull_request` provide read-only GitHub intelligence when `GITHUB_TOKEN` or `GH_TOKEN` is configured.
-- `sentry_projects`, `sentry_issues`, and `sentry_issue` provide read-only Sentry intelligence when `SENTRY_AUTH_TOKEN` is configured.
-- `developer_context_status` reports the Codebase Memory isolation contract, Context7 proxy, and Context Mode's local/client-side role.
-
-GitHub and Sentry credentials are read only from environment variables and are never returned by these tools. Dynamic Context7 and Codebase Memory tools can be exposed to scoped tokens only through the explicit `integrations` scope.
-
-## Optional MCP integrations
-
-Remote Access MCP can expose selected developer-context MCPs as namespaced tools:
-
-- **Context7** — proxied into the gateway as namespaced tools such as `context7_resolve-library-id` and `context7_query-docs`. The MIT-licensed `@upstash/context7-mcp` package is bundled as a normal dependency. A `CONTEXT7_API_KEY` environment variable can be supplied for higher limits/private repositories.
-- **Codebase Memory** — the MIT-licensed `codebase-memory-mcp` package is integrated as namespaced `codebase_memory_*` tools when its optional package is available. Set `RAMCP_ENABLE_CODEBASE_MEMORY=0` to disable it. Each Remote Access MCP instance uses a dedicated Codebase Memory runtime, home, cache, data directory, runtime directory, and service identity; it never reuses another service's Codebase Memory state. Set `RAMCP_CODEBASE_ROOT` to the repository this gateway instance should expose; `index_repository` is additionally restricted to that root.
-- **Context Mode** — shipped as an optional local dependency only. It is a client/plugin-side context optimization layer and is **not proxied as a hosted service** because its Elastic License 2.0 prohibits providing the software as a hosted or managed service.
-
-Integrations are loaded before the MCP transport connects, so the initial `tools/list` includes them when the upstream MCP is available. If an optional integration cannot start, the core Remote Access MCP remains available and the integration is omitted with a diagnostic message.
-
-### Context Mode local setup
-
-The `context-mode` package is intentionally kept as an optional dependency. Install Remote Access MCP locally, then configure the detected coding agent to run the local `context-mode` executable according to the upstream Context Mode documentation. Do not expose its MCP server through a Remote Access MCP HTTP endpoint.
-
-### Tunnel providers (4.1)
-
-`ramcp tunnel` uses Cloudflare Quick Tunnel by default. You can select a provider explicitly or let RAMCP fall back in order:
-
-```bash
-ramcp tunnel --provider cloudflare
-ramcp tunnel --provider pinggy
-ramcp tunnel --provider localhostrun
-ramcp tunnel --provider auto
-```
-
-`auto` tries providers sequentially and keeps only the first successful tunnel alive. Provider support is intentionally ephemeral: it does not alter `public_host` or the existing production endpoint. Quick Tunnel and other free tunnel services are best-effort and subject to their own availability, limits, and terms.
+MIT © Amir Ali Manzar

@@ -1,137 +1,340 @@
-# remote-access-mcp
+# Remote Access MCP
 
-[![npm version](https://img.shields.io/npm/v/remote-access-mcp.svg)](https://www.npmjs.com/package/remote-access-mcp)
-[![CI](https://github.com/AmirAliManzar/remote-access-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/AmirAliManzar/remote-access-mcp/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+<p align="center">
+  <strong>به دستیار هوش مصنوعی‌ات دست واقعی به کامپیوترت بده.</strong><br>
+  ChatGPT، Claude، Grok، Qwen Desktop و کلاینت‌های سازگار با MCP را به یک Agent واقعی تبدیل کن که می‌تواند روی لپ‌تاپ، دسکتاپ، VM یا سرورت کار کند.
+</p>
 
-هر ماشینی رو با MCP ([Model Context Protocol](https://modelcontextprotocol.io)) به یک نقطهٔ امن و قابل‌کنترل برای عامل‌های هوش مصنوعی تبدیل کن.
+<p align="center">
+  <a href="https://www.npmjs.com/package/remote-access-mcp">NPM</a> ·
+  <a href="https://github.com/AmirAliManzar/remote-access-mcp">GitHub</a> ·
+  <a href="SECURITY.md">Security</a> ·
+  <a href="CHANGELOG.md">Changelog</a>
+</p>
 
-ChatGPT (حالت Developer)، Claude، Grok و هر کلاینت MCP-دیگه از طریق HTTPS وصل میشن و به‌صورت امن سرورت رو کنترل می‌کنن — همه پشت دسترسی‌های per-token.
+> **ایده ساده است:** چت‌بات همین الان می‌تواند فکر و تحلیل کند؛ Remote Access MCP به آن، با دسترسی کنترل‌شده، «دست» روی یک ماشین واقعی می‌دهد.
 
-**بدون پایتون. بدون داکر. فقط Node.js.**
+## Remote Access MCP چیست؟
+
+[Model Context Protocol یا MCP](https://modelcontextprotocol.io/) استانداردی برای اتصال اپلیکیشن‌های هوش مصنوعی به ابزار و داده‌های خارجی است. **Remote Access MCP پل بین کلاینت هوش مصنوعی و یک ماشین واقعی است.**
+
+آن را روی لپ‌تاپ، کامپیوتر، سرور، VM، Home Lab یا Cloud VM نصب کن؛ دسترسی‌ها را محدود کن؛ کلاینت MCP را وصل کن؛ و اجازه بده Agent واقعاً کار را انجام دهد.
+
+به‌جای این:
+
+> «این ارور منه؛ بگو چه دستوری اجرا کنم.»
+
+می‌توانی بگویی:
+
+> «پروژه را بررسی کن، باگ را بازتولید کن، فایل‌ها را اصلاح کن، تست‌ها را اجرا کن، لاگ‌ها را بررسی کن، مشکل را برطرف کن و دقیقاً بگو چه چیزی تغییر کرده.»
+
+یعنی مدل فقط جواب نمی‌دهد؛ **چرخهٔ واقعی مشاهده → برنامه‌ریزی → تغییر → تست → تأیید را اجرا می‌کند.**
+
+## از Chatbot به Agent
+
+```text
+┌──────────────────────┐
+│ ChatGPT / Claude     │
+│ Grok / Qwen / ...    │
+└──────────┬───────────┘
+           │ MCP / HTTPS
+           ▼
+┌──────────────────────────────┐
+│      Remote Access MCP       │
+│ auth · policy · audit · jobs  │
+└──────────────┬───────────────┘
+               │ ابزارهای کنترل‌شده
+       ┌───────┼────────┬──────────┐
+       ▼       ▼        ▼          ▼
+     فایل    Shell     Git      Browser
+       │       │        │          │
+       └───────┴────────┴──────────┘
+                    ▼
+             ماشین واقعی شما
+```
+
+## Agent واقعاً چه کارهایی می‌تواند انجام دهد؟
+
+بسته به Permissionهایی که می‌دهی، Agent می‌تواند:
+
+- ساختار و کد یک پروژه را بررسی و درک کند
+- فایل بسازد، بخواند، ویرایش کند، حذف کند و جابه‌جا کند
+- فایل‌های باینری را Upload/Download کند
+- Test، Lint، Build و Script اجرا کند
+- Process، CPU، RAM، Disk، Network، Service و Log را بررسی کند
+- روی Git کار کند
+- از طریق Adapterهای کنترل‌شده با SQLite، MySQL، PostgreSQL و Redis کار کند
+- Endpointهای HTTP و صفحات Browser را بررسی کند
+- Jobهای طولانی را در Background اجرا کند
+- چند کار مستقل را به‌صورت محدود و موازی انجام دهد
+- کارهای زمان‌بندی‌شده و Event/Webhook را اجرا کند
+- Docker/Kubernetes و زیرساخت موجود را بررسی کند
+- قبل از تغییرات حساس Snapshot بگیرد و در صورت نیاز Rollback کند
+- از Integrationهایی مثل Context7 و Codebase Memory استفاده کند
+
+در نتیجه می‌توانی از یک چت‌بات معمولی، یک **Agent عملیاتی روی ماشین واقعی** بسازی.
+
+## روی چه سیستم‌هایی؟
+
+هسته پروژه برای **Linux، macOS و Windows** با Node.js 18+ طراحی شده است.
+
+- Linux → systemd برای سرویس دائمی
+- macOS → launchd برای سرویس دائمی
+- Windows → Scheduled Tasks برای سرویس دائمی
+- هر سیستم → اجرای مستقیم یا Tunnel/Direct HTTP بسته به شرایط
+
+### لپ‌تاپ و دسکتاپ بدون دامنه
+
+لازم نیست برای شروع دامنه بخری یا Port Forwarding انجام دهی:
 
 ```bash
 npm install -g remote-access-mcp
 ramcp init
+ramcp tunnel
 ```
 
-## اجرای موازی، Worker و Background Job
-
-این نسخه یک Worker Pool محدودشده برای اجرای کارهای طولانی و موازی دارد. از `run_background` برای اجرای غیرهمزمان و از `run_parallel` برای چند کار موازی استفاده کنید. هر Job شناسه، وضعیت، خروجی، لغو، Timeout و محدودیت تلاش مجدد دارد و مالکیت آن به Token متصل است.
-
-## عملیات امن جدید
-
-- انتقال فایل باینری با `upload_file` و `download_file`، محدودیت حجم و SHA-256.
-- حالت نیازمند تأیید برای Shell و Command Allowlist.
-- Change Set تراکنشی با Backup و Rollback.
-- Roleهای `auditor`، `developer`، `deployer` و `admin`.
-
-## تشخیص و توسعه‌پذیری
-
-- System/Service Diagnostics و Health Watch با Webhook.
-- Query/Schema برای MySQL، PostgreSQL و Redis با Credential از Environment.
-- MCP Resources و Prompts.
-- Pluginهای محلی مورد اعتماد با Manifest و مدیریت نصب/حذف.
-
-## نصب
-
-هستهٔ پروژه با Node.js 18 و بالاتر اجرا می‌شود و روی لینوکس، macOS و ویندوز طراحی شده است. بعضی یکپارچه‌سازی‌های اختیاری ممکن است به نسخهٔ بالاتری از Node.js نیاز داشته باشند؛ در این حالت هسته بدون آن یکپارچه‌سازی همچنان اجرا می‌شود.
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/AmirAliManzar/remote-access-mcp/main/install.sh | bash
-ramcp init
-```
+Remote Access MCP می‌تواند از Tunnel Providerهای پشتیبانی‌شده استفاده کند و یک HTTPS endpoint عمومی در اختیارت بگذارد.
 
 ## شروع سریع
 
-روی **سرور** با دامنه:
+### نصب
 
 ```bash
-ramcp init                          # کانفیگ + اولین توکن
-ramcp policy allow /srv/myapp       # چه مسیرهایی رو AI ببینه
-ramcp policy shell on               # اجازه اجرای دستور (اختیاری)
-ramcp service install --domain mcp.example.com   # systemd + nginx
-ramcp doctor                        # بررسی سلامت همه‌چیز
-ramcp url                           # URL کانکتور برای چت‌بات
+npm install -g remote-access-mcp
 ```
 
-روی **لپ‌تاپ / دسکتاپ** (بدون دامنه و بدون پورت‌فوروارد):
+یا روی Ubuntu/Debian:
 
 ```bash
-ramcp tunnel
-# → دفعه اول cloudflared رو خودکار دانلود می‌کنه (بدون نیاز به اکانت)
-#   یه URL عمومی https میده مثل https://random-words.trycloudflare.com
-# دستور `ramcp url` توی ترمینال دیگه، لینک زنده کانکتور رو نشون میده.
+curl -fsSL https://raw.githubusercontent.com/AmirAliManzar/remote-access-mcp/main/install.sh | bash
 ```
 
-روی ویندوز، مک و لینوکس یکسانه — PowerShell/cmd روی ویندوز، launchd روی مک، systemd روی لینوکس برای سرویس خودکار.
-
-## توکن‌های چندگانه — کمترین دسترسی به‌صورت پیش‌فرض
+### راه‌اندازی
 
 ```bash
-# توکن فقط-خواندنی برای ممیزی
-ramcp token add --name auditor --paths /srv --scopes filesystem --read-only
-
-# توکن دیپلوی: فایل + گیت + شل، با محدودیت نرخ و انقضا
-ramcp token add --name deploy --paths /srv/app --scopes filesystem,git,shell --shell --rpm 30 --expires 2026-12-31
+ramcp init
 ```
 
-هر توکن خودش داره: مسیرهای مجاز/غیرمجاز، گروه ابزارها (scopes)، فلگ شل، حالت فقط-خواندنی، محدودیت نرخ، و تاریخ انقضا.
+با اجرای `ramcp` بدون آرگومان در یک Terminal تعاملی، TUI (رابط کاربری ترمینال) راهنمای پروژه باز می‌شود.
 
-## ۴۵ ابزار داخلی در ۱۶ گروه
+### دسترسی را محدود کن
 
-فایل‌سیستم (۷)، شل (۳)، سیستم (۳)، HTTP با محافظ SSRF (۳)، گیت با whitelist فعل‌ها (۱)، SQLite تک-دستوره (۲)، لاگ/journalctl (۳)، سرویس‌ها (۲)، پکیج‌ها (۳)، زمان‌بند (۳)، اسکن امنیتی (۲)، تحلیل پروژه (۲)، پلنینگ + اسنپ‌شات/rollback (۴)، مدیریت پالیسی (۴)، عملیات (۲). یکپارچه‌سازی‌های MCP اختیاری می‌توانند ابزارهای نام‌گذاری‌شدهٔ بیشتری اضافه کنند.
-
-## Webhook و بکاپ
+مثلاً فقط پروژه مشخصی را در اختیار Agent قرار بده:
 
 ```bash
-ramcp webhook add --url https://hooks.example.com/ramcp --events tool.error
-ramcp config export --out backup.json    # اسنپ‌شات کامل — توکن‌های زنده داره!
-ramcp config import backup.json --merge  # ادغام با حفظ هویت محلی
+ramcp policy allow ~/Projects/my-app
+ramcp policy shell on
 ```
 
-## مدل امنیتی
-
-- **فقط loopback** — سرور روی `127.0.0.1` گوش میده
-- **هشدار بکاپ** — خروجی `ramcp config export` شامل توکن‌های فعال است؛ آن را هرگز در Git، issue tracker یا جای عمومی قرار نده و در صورت افشا توکن‌ها را بچرخان.
-- **توکن timing-safe** روی هر درخواست — در لاگ‌ها فقط fingerprint ذخیره میشه
-- **Sandbox per-token** — resolve سیم‌لینک و `..` قبل از چک؛ deny همیشه برنده‌ست
-- **محدوده‌های SSRF بسته** — AI نمیتونه به metadata کلود یا سرویس‌های داخلی برسه
-- **ضد injection** — فعل‌های git whitelist، SQL تک-دستوره، ATTACH بسته
-- **لاگ audit ضد-دستکاری** — hash chain؛ `ramcp audit --verify` هر حذف/ویرایش رو لو میده؛ رازهای داخل آرگومان‌ها redact میشن
-- **Hot-reload** — تغییر پالیسی از درخواست بعدی اعمال میشه، بدون ریستارت
-- **کلید-کشِ حالت فقط-خواندن** — `ramcp policy readonly on` همه ابزارهای تغییردهنده رو قفل می‌کنه
-
-## دستورات کامل
-
-`init` `start` `url` `doctor` `status` `token list|add|show|rotate|revoke` `policy [token] allow|deny|shell|readonly` `audit [--verify]` `service install|uninstall|logs|status` `schedule list` — جزئیات: [README انگلیسی](README.md)
-
-## مجوز
-
-MIT — [LICENSE](LICENSE)
-
----
-
-📚 [English README](README.md) | [نقشه راه](ROADMAP.md) | [سیاست امنیتی](SECURITY.md) | [تغییرات](CHANGELOG.md) | [مشارکت](CONTRIBUTING.md)
-
-## یکپارچه‌سازی‌های MCP اختیاری
-
-Remote Access MCP می‌تواند برخی MCPهای مرتبط با توسعه را به‌صورت ابزارهای نام‌گذاری‌شده در اختیار عامل قرار دهد:
-
-- **Context7** — به‌صورت ابزارهای نام‌گذاری‌شده مانند `context7_resolve-library-id` و `context7_get-library-docs` داخل دروازه در دسترس قرار می‌گیرد.
-- **Codebase Memory** — در صورت موجود بودن وابستگی اختیاری، ابزارهای `codebase_memory_*` را ارائه می‌کند؛ با `RAMCP_ENABLE_CODEBASE_MEMORY=0` می‌توان آن را غیرفعال کرد. هر نمونهٔ Remote Access MCP یک runtime، home، cache، data، runtime directory و هویت سرویس اختصاصی برای Codebase Memory دارد و وضعیت نمونه‌های دیگر را استفاده نمی‌کند. با `RAMCP_CODEBASE_ROOT` ریشهٔ مخزن کدی را که این نمونه باید در اختیار Codebase Memory قرار دهد مشخص کنید؛ `index_repository` نیز به همین ریشه محدود شده است.
-- **Context Mode** — فقط به‌عنوان وابستگی اختیاری محلی نصب می‌شود و به‌عنوان سرویس میزبانی‌شده از طریق Remote Access MCP ارائه نمی‌شود، چون مجوز Elastic License 2.0 آن ارائهٔ نرم‌افزار به‌عنوان سرویس میزبانی‌شده یا مدیریت‌شده را محدود می‌کند.
-
-اگر یک یکپارچه‌سازی اختیاری در زمان راه‌اندازی قابل اجرا نباشد، هستهٔ Remote Access MCP همچنان در دسترس می‌ماند و آن یکپارچه‌سازی با پیام تشخیصی کنار گذاشته می‌شود.
-
-### دسترسی مستقیم HTTP
-
-اگر هیچ Tunnel Providerای در دسترس نباشد، می‌توان Gateway را با `--direct` مستقیماً روی IPv4 عمومی سرور و یک پورت تصادفی در محدوده High Dynamic اجرا کرد. پورت‌های رایج سرویس‌ها مانند 80، 443، 8443، 2083، 2087 و 2096 هیچ‌وقت توسط این قابلیت استفاده نمی‌شوند. در Linux در صورت وجود UFW، Rule لازم خودکار ایجاد و هنگام توقف پاک می‌شود.
+یا یک Token اختصاصی بساز:
 
 ```bash
-ramcp tunnel --direct
-ramcp tunnel --provider auto
+ramcp token add --name developer \
+  --paths ~/Projects/my-app \
+  --scopes filesystem,git,shell \
+  --shell
+```
+
+### اتصال Chatbot
+
+برای کلاینت‌هایی که Token را در URL می‌پذیرند:
+
+```text
+https://your-host/<token>/mcp
+```
+
+برای کلاینت‌هایی که Header دارند:
+
+```text
+https://your-host/mcp
+Authorization: Bearer <token>
+```
+
+برای دریافت URL آماده:
+
+```bash
 ramcp url
 ```
 
-در حالت Auto، آخرین Tunnel Provider موفق به‌عنوان Provider ترجیحی ذخیره می‌شود و در اجرای بعدی ابتدا همان Provider امتحان می‌شود تا تغییر لینک تا حد ممکن کاهش پیدا کند. با این حال Providerهای رایگان که hostname ثابت ارائه نمی‌کنند، نمی‌توانند URL یکسان را بعد از ایجاد Tunnel جدید تضمین کنند.
+## مثال واقعی: تعمیر پروژه
+
+```text
+کاربر:
+«تست‌ها Fail شده‌اند. علت را پیدا کن، اصلاحش کن، تست‌های مرتبط را اجرا کن
+و مطمئن شو تغییرت چیز دیگری را خراب نکرده.»
+
+Agent:
+  1. ساختار پروژه را بررسی می‌کند
+  2. فایل‌های مرتبط را می‌خواند
+  3. تست خراب را اجرا می‌کند
+  4. خروجی و Log را بررسی می‌کند
+  5. کد را اصلاح می‌کند
+  6. تست‌های Focused را اجرا می‌کند
+  7. Verification گسترده‌تر انجام می‌دهد
+  8. نتیجه و فایل‌های تغییرکرده را گزارش می‌کند
+```
+
+## مثال واقعی: عیب‌یابی سرور
+
+```text
+«ببین چرا این سرور کند شده. CPU، RAM، Disk، Processها، Network، Logها
+و Serviceها را بررسی کن، Bottleneck را پیدا کن، کم‌ریسک‌ترین راه‌حل را
+اجرا کن و بعد نتیجه را Verify کن.»
+```
+
+## امنیت و Permission
+
+نصب Remote Access MCP به معنی دادن دسترسی نامحدود به AI نیست.
+
+هر Token می‌تواند موارد زیر را داشته باشد:
+
+- مسیرهای مجاز
+- مسیرهای ممنوع
+- Scope ابزارها
+- Roleهای `auditor`، `developer`، `deployer`، `admin`
+- اجازه Shell
+- Command Allowlist
+- حالت Read-only
+- Rate Limit
+- Expiration
+
+نمونه Token فقط‌خواندنی:
+
+```bash
+ramcp token add \
+  --name auditor \
+  --paths /srv/myapp \
+  --scopes filesystem,git \
+  --read-only
+```
+
+### Defense in Depth
+
+پروژه شامل لایه‌های مختلف محافظتی است، از جمله:
+
+- کنترل مسیر بعد از Resolve کردن `..` و Symlink
+- برتری Deny نسبت به Allow
+- بررسی Timing-safe برای Token
+- Redact کردن Secretها در خروجی
+- محافظت SSRF در برابر Loopback، Private Network و Cloud Metadata
+- اعتبارسنجی Commandهای Git
+- محدودیت Queryهای SQLite و مسدود بودن `ATTACH`
+- محافظت از Serviceها و Processهای حساس
+- Timeout و محدودیت خروجی Command
+- Audit Log با Hash Chain
+- Snapshot و Rollback فایل‌ها
+- Plugin Isolation با Fail-Closed
+- Autonomous Recovery به‌صورت پیش‌فرض خاموش
+
+هدف امنیتی پروژه این نیست که «AI هیچ‌وقت اشتباه نمی‌کند»؛ هدف این است که **توانایی‌های AI محدود، قابل مشاهده، قابل بررسی و قابل لغو باشند.**
+
+## Background Job و اجرای موازی
+
+کارهای طولانی لازم نیست درخواست اصلی را Block کنند.
+
+Gateway از اجرای محدود Worker برای مواردی مثل:
+
+- Background Command
+- Parallel Operation
+- Retry محدود
+- Cancellation
+- Timeout
+- Capture خروجی
+- Metadata دائمی Job
+- مالکیت Job بر اساس Token
+
+پشتیبانی می‌کند.
+
+## Automation و Event
+
+Ruleهای Automation می‌توانند با Interval و Eventهای پشتیبانی‌شده مثل Webhook، File و Health اجرا شوند. Actionها همچنان از Policy، Scope، Read-only و Audit عبور می‌کنند.
+
+مثلاً:
+
+```text
+Webhook
+   ↓
+بررسی Deployment
+   ↓
+Health Check
+   ↓
+جمع‌آوری Log
+   ↓
+گزارش نتیجه
+```
+
+Autonomous Recovery به‌صورت پیش‌فرض غیرفعال است و فعال‌سازی آن نیاز به تنظیم صریح Operator دارد.
+
+## Codebase Memory و Integrationها
+
+Integrationهای اختیاری می‌توانند قابلیت Agent را بیشتر کنند، بدون اینکه هسته پروژه به آن‌ها وابسته باشد.
+
+- **Context7** → Context و Documentation کتابخانه‌ها
+- **Codebase Memory** → Context مخصوص Repository و Codebase
+- **Context Mode** → Integration محلی اختیاری
+- Pluginهای محلی با Validation، Fingerprint و Isolation
+
+هر Instance از Remote Access MCP می‌تواند Runtime، Cache و Data مستقل برای Codebase Memory داشته باشد تا با Instanceها و سرویس‌های دیگر روی همان ماشین تداخل نکند.
+
+## CLI و TUI
+
+CLI برای Script و Automation مناسب است و TUI برای مدیریت تعاملی خود Remote Access MCP طراحی شده است.
+
+```bash
+ramcp
+ramcp doctor
+ramcp status
+ramcp service status
+ramcp service logs -f
+ramcp tunnel
+ramcp url
+ramcp token list
+ramcp audit --verify
+```
+
+TUI یک Server Control Center عمومی نیست؛ تمرکزش روی Setup، اتصال، امنیت، تشخیص خطا و اجرای خود Remote Access MCP است.
+
+## قابلیت‌های اصلی
+
+| حوزه | نمونه قابلیت‌ها |
+|---|---|
+| Filesystem | list, read, write, edit, delete, search, upload/download |
+| Shell | اجرای کنترل‌شده Command، Process، Kill |
+| System | System Info، Disk، Network |
+| HTTP | Request، Port Check، Web Fetch با SSRF Guard |
+| Git | عملیات اعتبارسنجی‌شده |
+| Database | SQLite، MySQL، PostgreSQL، Redis |
+| Logs | فایل Log و Journal |
+| Services | Status و Action کنترل‌شده |
+| Planning | Plan، Snapshot، Rollback |
+| Scheduling | Taskهای زمان‌بندی‌شده |
+| Automation | Event و Webhook |
+| Browser | Open، Extract، Screenshot اختیاری |
+| Infrastructure | Docker، Kubernetes و تشخیص Cloudflare در صورت وجود CLI |
+| Security | Secret Scan، Port Scan، Audit Verification |
+
+سطح دقیق Toolها ممکن است در Releaseهای آینده تغییر کند؛ نسخه نصب‌شده و MCP Tool List منبع نهایی قابلیت‌ها هستند.
+
+## توسعه و مشارکت
+
+```bash
+git clone https://github.com/AmirAliManzar/remote-access-mcp.git
+cd remote-access-mcp
+npm install
+npm test
+npm run build
+```
+
+Bug Report، Security Report، پیشنهاد، Pull Request و سناریوهای واقعی Agentic خوش‌آمدند.
+
+## مستندات
+
+- [README انگلیسی](README.md)
+- [Roadmap](ROADMAP.md)
+- [Security](SECURITY.md)
+- [Changelog](CHANGELOG.md)
+- [Contributing](CONTRIBUTING.md)
+
+## مجوز
+
+MIT © Amir Ali Manzar
