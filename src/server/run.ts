@@ -9,7 +9,7 @@ import { buildApp } from './app.js';
 import { startScheduler } from '../tools/schedule.js';
 import { shellCommand, childEnv, platformLabel, writeRuntimeState, clearRuntimeState, dataDir } from '../core/platform.js';
 import { type TunnelHandle } from '../core/tunnel.js';
-import { startTunnelProvider, startTunnelAuto, type TunnelProviderName } from '../core/tunnel-providers.js';
+import { startTunnelProvider, startTunnelAuto, verifyTunnelHealth, TUNNEL_PROVIDERS, type TunnelProviderName } from '../core/tunnel-providers.js';
 import { jobManager } from '../core/jobs.js';
 import { allowDirectPort, chooseDirectPort, denyDirectPort, getPublicIPv4 } from '../core/direct-http.js';
 import { AuditLog } from '../core/audit.js';
@@ -97,37 +97,98 @@ export async function runServer(opts: {
       console.log(`\npublic URL: ${tunnel.url}${cfg.mcp_path}`);
       console.log(`connector:  ${tunnel.url}/${cfg.tokens[0].token}${cfg.mcp_path}`);
 
-      // Verify the public URL actually answers. Quick tunnels are best-effort:
-      // on a few networks (some datacenters, filtered ISPs) the edge accepts
-      // the connection but never proxies traffic. Telling the user now beats
-      // them pasting a dead URL into a chatbot later.
-      try {
-        const deadline = Date.now() + 20_000;
-        let healthy = false;
-        while (Date.now() < deadline && !healthy) {
-          try {
-            const r = await fetch(`${tunnel.url}/health`, { signal: AbortSignal.timeout(5000) });
-            healthy = r.ok;
-          } catch { /* DNS/edge propagation — retry */ }
-          if (!healthy) await new Promise((r) => setTimeout(r, 3000));
-        }
-        if (healthy) {
-          console.log(`[tunnel] verified: the public URL answers from the internet.`);
-        } else {
-          console.log(`[tunnel] WARNING: could not reach ${tunnel.url} from here.`);
-          console.log(`[tunnel] Some networks (filtered ISPs, certain datacenters) block the`);
-          console.log(`[tunnel] tunnel data path. Try a different network, or host the gateway`);
-          console.log(`[tunnel] on a server with a real domain instead.`);
-        }
-      } catch { /* verification is advisory only */ }
+      // Verify the public URL all the way to the MCP gateway. A provider's 503
+      // page (for example localhost.run's "No Tunnel here") must never count
+      // as a successful verification.
+      const initialDeadline = Date.now() + 20_000;
+      let initialHealth = await verifyTunnelHealth(tunnel.url, PKG.version);
+      while (!initialHealth.healthy && Date.now() < initialDeadline) {
+        await new Promise((r) => setTimeout(r, 3000));
+        initialHealth = await verifyTunnelHealth(tunnel.url, PKG.version);
+      }
+      if (initialHealth.healthy) {
+        console.log(`[tunnel] verified: public endpoint reaches Remote Access MCP v${PKG.version}.`);
+      } else {
+        console.log(`[tunnel] WARNING: public endpoint is unhealthy: ${initialHealth.reason || 'unknown error'}`);
+        console.log(`[tunnel] the tunnel will be monitored and automatically recovered when possible.`);
+      }
 
-      console.log(`\n(keep this process running — the URL dies when it exits)`);
+      console.log(`\n(tunnel health is monitored; keep this process running — the URL dies when it exits)`);
     } catch (e: any) {
       tunnelFailed = true;
       console.error(`[tunnel] failed: ${e.message}`);
       console.error('[tunnel] the gateway is still reachable locally.');
       console.log('[direct] tunnel unavailable; trying direct HTTP fallback.');
     }
+  }
+
+  let shuttingDown = false;
+  let tunnelMonitor: NodeJS.Timeout | undefined;
+  let tunnelRecovering = false;
+  let monitoredProvider: TunnelProviderName | undefined = tunnel?.provider as TunnelProviderName | undefined;
+  if (tunnel) {
+    let consecutiveFailures = 0;
+    tunnelMonitor = setInterval(async () => {
+      if (tunnelRecovering || shuttingDown) return;
+      let health: Awaited<ReturnType<typeof verifyTunnelHealth>> | null = null;
+      if (tunnel) {
+        health = await verifyTunnelHealth(tunnel.url, PKG.version, 5000);
+        if (health.healthy) {
+          consecutiveFailures = 0;
+          return;
+        }
+        consecutiveFailures += 1;
+        if (consecutiveFailures < 2) return;
+        console.error(`[tunnel] unhealthy (${tunnel.provider}): ${health.reason || 'unknown error'}`);
+      } else {
+        consecutiveFailures = 2;
+      }
+
+      tunnelRecovering = true;
+      const failedTunnel = tunnel;
+      const failedProvider = (failedTunnel?.provider as TunnelProviderName | undefined) || monitoredProvider || cfg.tunnel?.preferred_provider as TunnelProviderName;
+      if (!failedProvider) { tunnelRecovering = false; return; }
+      console.log('[tunnel] attempting automatic recovery...');
+      try { failedTunnel?.stop(); } catch {}
+      tunnel = null;
+
+      const preferred = cfg.tunnel?.preferred_provider as TunnelProviderName | undefined;
+      const order = preferred
+        ? [preferred, ...TUNNEL_PROVIDERS.filter((p) => p !== preferred)]
+        : [failedProvider, ...TUNNEL_PROVIDERS.filter((p) => p !== failedProvider)];
+      let recovered: TunnelHandle | null = null;
+      const failures: string[] = [];
+      for (const provider of order) {
+        try {
+          console.log(`[tunnel] reconnect: trying ${provider}...`);
+          const candidate = await startTunnelProvider(provider, { port, host, log: (m) => console.log(`[tunnel] ${m}`) });
+          const candidateHealth = await verifyTunnelHealth(candidate.url, PKG.version, 8000);
+          if (!candidateHealth.healthy) {
+            failures.push(`${provider}: ${candidateHealth.reason || 'health check failed'}`);
+            try { candidate.stop(); } catch {}
+            continue;
+          }
+          recovered = candidate;
+          break;
+        } catch (e: any) {
+          failures.push(`${provider}: ${e?.message || e}`);
+        }
+      }
+      if (recovered) {
+        tunnel = recovered;
+        monitoredProvider = recovered.provider as TunnelProviderName;
+        cfg.tunnel = { ...(cfg.tunnel || { provider: recovered.provider as any, auto_start: false }), preferred_provider: recovered.provider as any, last_url: recovered.url };
+        try { const { saveConfig } = await import('../core/config.js'); saveConfig(cfg); } catch {}
+        writeRuntimeState({ pid: process.pid, tunnel_url: recovered.url, tunnel_provider: recovered.provider, host, port, started: new Date().toISOString() });
+        console.log(`[tunnel] recovered: ${recovered.provider} → ${recovered.url}${cfg.mcp_path}`);
+        consecutiveFailures = 0;
+      } else {
+        console.error(`[tunnel] recovery failed: ${failures.join(' | ')}`);
+        tunnelFailed = true;
+      }
+      tunnelRecovering = false;
+    }, 15_000);
+    tunnelMonitor.unref();
   }
 
   if (wantDirect || (!tunnel && tunnelFailed)) {
@@ -164,12 +225,12 @@ export async function runServer(opts: {
     console.log(`tip: no public IP? run \`ramcp tunnel\` for an instant https URL.`);
   }
 
-  let shuttingDown = false;
   const shutdown = () => {
     if (shuttingDown) return;
     shuttingDown = true;
     console.log('\nshutting down...');
     jobManager.shutdown();
+    if (tunnelMonitor) clearInterval(tunnelMonitor);
     tunnel?.stop();
     if (directPort) void denyDirectPort(directPort);
     directServer?.close();

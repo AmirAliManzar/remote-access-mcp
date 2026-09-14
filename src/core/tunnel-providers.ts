@@ -13,6 +13,35 @@ export interface TunnelProviderOptions {
   log?: (msg: string) => void;
 }
 
+export interface TunnelHealth {
+  healthy: boolean;
+  status?: number;
+  reason?: string;
+}
+
+/** Verify that a public URL is actually serving this MCP gateway, not merely an HTTP edge/provider error. */
+export async function verifyTunnelHealth(url: string, expectedVersion?: string, timeoutMs = 5_000): Promise<TunnelHealth> {
+  try {
+    const response = await fetch(`${url.replace(/\/$/, '')}/health`, {
+      signal: AbortSignal.timeout(timeoutMs),
+      headers: { accept: 'application/json' },
+    });
+    const body = await response.text();
+    if (!response.ok) return { healthy: false, status: response.status, reason: `HTTP ${response.status}: ${body.slice(0, 160)}` };
+    let payload: any;
+    try { payload = JSON.parse(body); } catch { return { healthy: false, status: response.status, reason: 'health endpoint returned non-JSON content' }; }
+    if (payload?.status !== 'ok' || payload?.service !== 'remote-access-mcp') {
+      return { healthy: false, status: response.status, reason: 'health response is not from Remote Access MCP' };
+    }
+    if (expectedVersion && payload.version !== expectedVersion) {
+      return { healthy: false, status: response.status, reason: `version mismatch: expected ${expectedVersion}, got ${payload.version ?? 'unknown'}` };
+    }
+    return { healthy: true, status: response.status };
+  } catch (e: any) {
+    return { healthy: false, reason: e?.message || String(e) };
+  }
+}
+
 const URL_PATTERNS: Record<TunnelProviderName, RegExp> = {
   pinggy: /https:\/\/[^\s"'<>]+\.(?:free\.pinggy\.net|pinggy-free\.link)/i,
   localhostrun: /https:\/\/[^\s"'<>]+\.lhr\.life/i,

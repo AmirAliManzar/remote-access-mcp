@@ -1,5 +1,15 @@
 # Changelog
 
+## 4.6.0 - Tunnel Recovery & Health Monitoring
+
+- Verifies public tunnel health against the actual Remote Access MCP `/health` payload instead of accepting any HTTP response.
+- Detects provider-side failures such as localhost.run `503 No Tunnel here` as unhealthy.
+- Adds continuous tunnel health monitoring with consecutive-failure protection against transient network errors.
+- Automatically reconnects a failed tunnel and verifies the replacement before declaring recovery.
+- Supports provider failover during recovery and persists the provider/URL that successfully recovered.
+- Clears tunnel monitoring during graceful shutdown so recovery cannot race process teardown.
+- Keeps local MCP service healthy even when the public tunnel is unavailable.
+
 ## 4.5.0 - Public Documentation & Agentic Positioning
 
 - Reworked the public README around the core mission: turning MCP-compatible chatbots into practical agents that can operate on real laptops, desktops, VMs, and servers.
