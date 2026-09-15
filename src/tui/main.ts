@@ -11,7 +11,7 @@ import { readRuntimeState } from '../core/platform.js';
 import { startTunnelProvider, startTunnelAuto, type TunnelProviderName } from '../core/tunnel-providers.js';
 
 const APP = 'Remote Access MCP';
-const providers: Array<TunnelProviderName | 'auto'> = ['auto', 'pinggy', 'cloudflare', 'localhostrun'];
+const providers: Array<TunnelProviderName | 'auto'> = ['auto', 'pinggy', 'cloudflare', 'localhostrun', 'nport'];
 
 type Screen = blessed.Widgets.Screen;
 type Box = blessed.Widgets.BoxElement;
@@ -231,14 +231,14 @@ function tunnelMenu(screen: Screen): void {
   const list = blessed.list({
     parent: screen, top: 5, left: 3, width: '94%', height: 12,
     label: ' PROVIDER ', border: { type: 'line' }, keys: true,
-    items: ['Auto-select', 'Pinggy', 'Cloudflare', 'localhost.run', 'Direct HTTP', 'Back'],
+    items: ['Auto-select', 'Pinggy', 'Cloudflare', 'localhost.run', 'NPort', 'Direct HTTP', 'Back'],
     style: { border: { fg: 'gray' }, selected: { bg: 'cyan', fg: 'black', bold: true } },
   });
   footer(screen);
   screen.append(list); list.focus(); screen.render();
   list.on('select', (_item, index) => {
-    if (index === 5) dashboard(screen);
-    else if (index === 4) runCommand(screen, ['tunnel', '--direct']);
+    if (index === 6) dashboard(screen);
+    else if (index === 5) runCommand(screen, ['tunnel', '--direct']);
     else runCommand(screen, ['tunnel', '--provider', providers[index]]);
   });
 }
@@ -296,7 +296,7 @@ function setupTunnel(screen: Screen): void {
   header(screen, 'Setup · Connection');
   const list = blessed.list({ parent: screen, top: 6, left: 4, width: '92%', height: 11,
     label: ' How should the gateway connect? ', border: { type: 'line' }, keys: true,
-    items: ['Local only', 'Auto-select public tunnel', 'Pinggy', 'Cloudflare', 'localhost.run'],
+    items: ['Local only', 'Auto-select public tunnel', 'Pinggy', 'Cloudflare', 'localhost.run', 'NPort'],
     style: { border: { fg: 'gray' }, selected: { bg: 'cyan', fg: 'black', bold: true } } });
   footer(screen); screen.append(list); list.focus(); screen.render();
   list.once('select', (_x, index) => {

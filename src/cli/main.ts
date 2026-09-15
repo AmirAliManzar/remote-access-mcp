@@ -34,7 +34,7 @@ Usage:
 Getting started:
   init [--paths a,b]            Create config + first token
   start [--tunnel] [--provider P] [--direct] [--port P] Run the gateway
-  tunnel [--provider P] [--direct] Start gateway + public URL (cloudflare|pinggy|localhostrun|auto)
+  tunnel [--provider P] [--direct] Start gateway + public URL (auto|localhostrun|cloudflare|pinggy|nport)
   url [token]                   Print the connector URL for a chatbot
   doctor                        Diagnose everything in one pass
   status                        Config + service summary

@@ -25,9 +25,14 @@ export function getTunnelRecoveryOrder(failedProvider?: TunnelProviderName, pref
       ? [preferred, ...TUNNEL_PROVIDERS.filter((p) => p !== preferred)]
       : [...TUNNEL_PROVIDERS];
   }
-  const failedIndex = TUNNEL_PROVIDERS.indexOf(failedProvider);
-  if (failedIndex < 0) return [...TUNNEL_PROVIDERS];
-  return TUNNEL_PROVIDERS.map((_, index) => TUNNEL_PROVIDERS[(failedIndex + 1 + index) % TUNNEL_PROVIDERS.length]);
+  if (!TUNNEL_PROVIDERS.includes(failedProvider)) return [...TUNNEL_PROVIDERS];
+  const baseOrder = preferred
+    ? [preferred, ...TUNNEL_PROVIDERS.filter((provider) => provider !== preferred)]
+    : [...TUNNEL_PROVIDERS];
+  return [
+    ...baseOrder.filter((provider) => provider !== failedProvider),
+    failedProvider,
+  ];
 }
 
 export async function runServer(opts: {
@@ -158,7 +163,7 @@ export async function runServer(opts: {
 
       // Rotate away from the failed provider first. Do not let a preferred
       // provider pin Auto recovery to the same broken service.
-      // Example: localhostrun fails -> pinggy -> cloudflare -> localhostrun.
+      // Example: localhostrun fails -> pinggy -> nport -> cloudflare -> localhostrun.
       // Only retry the failed provider after every alternative was attempted.
       const preferred = cfg.tunnel?.preferred_provider as TunnelProviderName | undefined;
       const order = getTunnelRecoveryOrder(failedProvider, preferred);

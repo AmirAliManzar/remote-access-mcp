@@ -12,7 +12,7 @@ describe('tunnel provider safety', () => {
   });
 
   it('keeps provider order deterministic for auto fallback', () => {
-    expect(TUNNEL_PROVIDERS).toEqual(['cloudflare', 'pinggy', 'localhostrun']);
+    expect(TUNNEL_PROVIDERS).toEqual(['cloudflare', 'pinggy', 'localhostrun', 'nport']);
   });
 
   it('rejects a provider error page such as localhost.run No Tunnel here', async () => {
@@ -68,10 +68,16 @@ describe('tunnel provider safety', () => {
 
 
 describe('tunnel persistence contract', () => {
-  it('supports a preferred provider without changing the public provider list', async () => {
+  it('supports the additional nport provider', async () => {
+    const mod = await import('../src/core/tunnel-providers.js');
+    expect(mod.TUNNEL_PROVIDERS).toContain('nport');
+  });
+
+  it('supports a preferred provider across all configured providers', async () => {
     const mod = await import('../src/core/tunnel-providers.js');
     expect(mod.TUNNEL_PROVIDERS.includes('cloudflare')).toBe(true);
     expect(mod.TUNNEL_PROVIDERS.includes('pinggy')).toBe(true);
     expect(mod.TUNNEL_PROVIDERS.includes('localhostrun')).toBe(true);
+    expect(mod.TUNNEL_PROVIDERS.includes('nport')).toBe(true);
   });
 });

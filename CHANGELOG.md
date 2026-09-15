@@ -1,5 +1,12 @@
 # Changelog
 
+## 4.6.5
+
+- Hardened localhost.run SSH session lifetime on Windows by detaching the OpenSSH child from terminal lifecycle events and keeping its remote shell active.
+- Added `nport` as an additional zero-config HTTPS tunnel provider for machines without public IPs or port forwarding.
+- Added provider URL parsing and health verification for nport.
+- Expanded automatic recovery to include nport and avoid immediately looping on a failed provider.
+
 ## 4.6.4
 
 - Fix `ramcp update` on Windows by invoking `npm.cmd` instead of the POSIX `npm` executable name.

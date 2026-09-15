@@ -6,6 +6,7 @@ describe('tunnel recovery order', () => {
     expect(getTunnelRecoveryOrder('localhostrun', 'localhostrun')).toEqual([
       'cloudflare',
       'pinggy',
+      'nport',
       'localhostrun',
     ]);
   });
@@ -14,6 +15,7 @@ describe('tunnel recovery order', () => {
     expect(getTunnelRecoveryOrder('pinggy', 'localhostrun')).toEqual([
       'localhostrun',
       'cloudflare',
+      'nport',
       'pinggy',
     ]);
   });
@@ -23,6 +25,7 @@ describe('tunnel recovery order', () => {
       'localhostrun',
       'cloudflare',
       'pinggy',
+      'nport',
     ]);
   });
 });
