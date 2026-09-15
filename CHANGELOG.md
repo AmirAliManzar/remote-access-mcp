@@ -2,6 +2,8 @@
 
 ## 4.6.4
 
+- Fix `ramcp update` on Windows by invoking `npm.cmd` instead of the POSIX `npm` executable name.
+- Report a concise update failure instead of leaking an unhandled `spawnSync npm ENOENT` stack trace.
 - Fix Windows SSH tunnel lifecycle by explicitly disabling pseudo-terminal allocation (`-T`).
 - Hide the OpenSSH child console on Windows without changing tunnel process lifetime.
 

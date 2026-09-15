@@ -897,7 +897,13 @@ async function cmdUpdate(args: Args): Promise<void> {
   console.log(`latest:  v${latest}`);
   if (args.flags.has('dry-run')) { console.log('(dry-run — no changes)'); return; }
   if (isLinux() && process.getuid?.() !== 0) { console.error('upgrade requires root (sudo) for a global npm install'); process.exit(1); }
-  execFileSync('npm', ['install', '-g', `remote-access-mcp@${latest}`], { stdio: 'inherit' });
+  const npmCommand = isWindows() ? 'npm.cmd' : 'npm';
+  try {
+    execFileSync(npmCommand, ['install', '-g', `remote-access-mcp@${latest}`], { stdio: 'inherit' });
+  } catch (error: any) {
+    console.error(`update failed: ${error?.code || error?.message || 'npm install failed'}`);
+    process.exit(1);
+  }
   if (serviceIsInstalled()) {
     if (hasSystemd()) run('systemctl', ['restart', SERVICE_NAME]);
     else if (isMac()) { run('launchctl', ['unload', launchdFile()]); run('launchctl', ['load', '-w', launchdFile()]); }
