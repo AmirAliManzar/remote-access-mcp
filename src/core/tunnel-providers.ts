@@ -214,6 +214,8 @@ export async function startTunnelProvider(name: TunnelProviderName, opts: Tunnel
     return startSshTunnel(name, opts, ['-R', `80:${host}:${opts.port}`, 'nokey@localhost.run']);
   }
 
+  const majorNode = Number.parseInt(process.versions.node.split('.')[0], 10);
+  if (majorNode < 20) throw new Error('nport requires Node.js 20 or newer');
   const npx = which(process.platform === 'win32' ? 'npx.cmd' : 'npx');
   if (!npx) throw new Error('nport: npx is not installed');
   const subdomain = `ramcp-${randomBytes(5).toString('hex')}`;
