@@ -1,5 +1,11 @@
 # Changelog
 
+## 4.6.4
+
+- Fix Windows SSH tunnel lifecycle by explicitly disabling pseudo-terminal allocation (`-T`).
+- Hide the OpenSSH child console on Windows without changing tunnel process lifetime.
+
+
 ## 4.6.2
 
 - Fixed Auto tunnel recovery repeatedly selecting the failed preferred provider.
