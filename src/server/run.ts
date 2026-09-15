@@ -89,29 +89,15 @@ export async function runServer(opts: {
       const provider = configured === 'auto' && preferred ? preferred : configured;
       console.log(`[tunnel] provider: ${provider}${configured === 'auto' && preferred ? ' (preferred)' : ''}`);
       tunnel = configured === 'auto'
-        ? await startTunnelAuto({ port, host, log: (m) => console.log(`[tunnel] ${m}`) }, preferred)
-        : await startTunnelProvider(provider as TunnelProviderName, { port, host, log: (m) => console.log(`[tunnel] ${m}`) });
+        ? await startTunnelAuto({ port, host, expectedVersion: PKG.version, log: (m) => console.log(`[tunnel] ${m}`) }, preferred)
+        : await startTunnelProvider(provider as TunnelProviderName, { port, host, expectedVersion: PKG.version, log: (m) => console.log(`[tunnel] ${m}`) });
       cfg.tunnel = { ...(cfg.tunnel || { provider: configured as any, auto_start: false }), preferred_provider: tunnel.provider as any, last_url: tunnel.url };
       try { const { saveConfig } = await import('../core/config.js'); saveConfig(cfg); } catch { /* runtime link persistence is best effort */ }
       writeRuntimeState({ pid: process.pid, tunnel_url: tunnel.url, tunnel_provider: tunnel.provider, host, port, started: new Date().toISOString() });
       console.log(`\npublic URL: ${tunnel.url}${cfg.mcp_path}`);
       console.log(`connector:  ${tunnel.url}/${cfg.tokens[0].token}${cfg.mcp_path}`);
 
-      // Verify the public URL all the way to the MCP gateway. A provider's 503
-      // page (for example localhost.run's "No Tunnel here") must never count
-      // as a successful verification.
-      const initialDeadline = Date.now() + 20_000;
-      let initialHealth = await verifyTunnelHealth(tunnel.url, PKG.version);
-      while (!initialHealth.healthy && Date.now() < initialDeadline) {
-        await new Promise((r) => setTimeout(r, 3000));
-        initialHealth = await verifyTunnelHealth(tunnel.url, PKG.version);
-      }
-      if (initialHealth.healthy) {
-        console.log(`[tunnel] verified: public endpoint reaches Remote Access MCP v${PKG.version}.`);
-      } else {
-        console.log(`[tunnel] WARNING: public endpoint is unhealthy: ${initialHealth.reason || 'unknown error'}`);
-        console.log(`[tunnel] the tunnel will be monitored and automatically recovered when possible.`);
-      }
+      console.log(`[tunnel] verified: public endpoint reaches Remote Access MCP v${PKG.version}.`);
 
       console.log(`\n(tunnel health is monitored; keep this process running — the URL dies when it exits)`);
     } catch (e: any) {
@@ -161,7 +147,7 @@ export async function runServer(opts: {
       for (const provider of order) {
         try {
           console.log(`[tunnel] reconnect: trying ${provider}...`);
-          const candidate = await startTunnelProvider(provider, { port, host, log: (m) => console.log(`[tunnel] ${m}`) });
+          const candidate = await startTunnelProvider(provider, { port, host, expectedVersion: PKG.version, log: (m) => console.log(`[tunnel] ${m}`) });
           const candidateHealth = await verifyTunnelHealth(candidate.url, PKG.version, 8000);
           if (!candidateHealth.healthy) {
             failures.push(`${provider}: ${candidateHealth.reason || 'health check failed'}`);

@@ -11,6 +11,8 @@ export interface TunnelProviderOptions {
   host?: string;
   timeoutMs?: number;
   log?: (msg: string) => void;
+  expectedVersion?: string;
+  healthTimeoutMs?: number;
 }
 
 export interface TunnelHealth {
@@ -51,7 +53,15 @@ const URL_PATTERNS: Record<TunnelProviderName, RegExp> = {
 function startSshTunnel(name: TunnelProviderName, opts: TunnelProviderOptions, args: string[]): Promise<TunnelHandle> {
   const ssh = which('ssh');
   if (!ssh) throw new Error(`${name}: ssh is not installed`);
-  const child = spawn(ssh, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+  const sshArgs = [
+    '-o', 'StrictHostKeyChecking=accept-new',
+    '-o', 'ExitOnForwardFailure=yes',
+    '-o', 'ServerAliveInterval=15',
+    '-o', 'ServerAliveCountMax=3',
+    '-o', 'TCPKeepAlive=yes',
+    ...args.filter((arg) => !['-o', 'StrictHostKeyChecking=accept-new', '-o', 'ExitOnForwardFailure=yes'].includes(arg)),
+  ];
+  const child = spawn(ssh, sshArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
   const timeoutMs = opts.timeoutMs ?? 45_000;
   const log = opts.log || (() => {});
   return new Promise((resolve, reject) => {
@@ -68,8 +78,33 @@ function startSshTunnel(name: TunnelProviderName, opts: TunnelProviderOptions, a
       const m = buffer.match(URL_PATTERNS[name]);
       if (!m || settled) return;
       settled = true; clearTimeout(timer);
-      log(`${name}: ${m[0]}`);
-      resolve({ url: m[0].replace(/[.,;)]+$/, ''), child, stop: cleanup, provider: name });
+      const url = m[0].replace(/[.,;)]+$/, '');
+      log(`${name}: ${url}`);
+      const handle: TunnelHandle = { url, child, stop: cleanup, provider: name };
+      const healthDeadline = Date.now() + (opts.healthTimeoutMs ?? 20_000);
+      const verify = async (): Promise<void> => {
+        if (!opts.expectedVersion) {
+          resolve(handle);
+          return;
+        }
+        let health = await verifyTunnelHealth(url, opts.expectedVersion, 4_000);
+        while (!health.healthy && Date.now() < healthDeadline) {
+          await new Promise((r) => setTimeout(r, 1_500));
+          if (child.exitCode !== null) break;
+          health = await verifyTunnelHealth(url, opts.expectedVersion, 4_000);
+        }
+        if (health.healthy) {
+          log(`${name}: public endpoint verified`);
+          resolve(handle);
+          return;
+        }
+        cleanup();
+        reject(new Error(`${name} public endpoint failed health verification: ${health.reason || 'unknown error'}`));
+      };
+      void verify().catch((error) => {
+        cleanup();
+        reject(error);
+      });
     };
     child.stdout?.on('data', scan); child.stderr?.on('data', scan);
     child.on('error', (e) => { if (!settled) { settled = true; clearTimeout(timer); reject(e); } });
@@ -81,9 +116,9 @@ export async function startTunnelProvider(name: TunnelProviderName, opts: Tunnel
   const host = opts.host || '127.0.0.1';
   if (name === 'cloudflare') return startQuickTunnel(opts);
   if (name === 'pinggy') {
-    return startSshTunnel(name, opts, ['-o', 'StrictHostKeyChecking=accept-new', '-o', 'ExitOnForwardFailure=yes', '-p', '443', '-R', `0:${host}:${opts.port}`, 'a.pinggy.io']);
+    return startSshTunnel(name, opts, ['-p', '443', '-R', `0:${host}:${opts.port}`, 'a.pinggy.io']);
   }
-  return startSshTunnel(name, opts, ['-o', 'StrictHostKeyChecking=accept-new', '-o', 'ExitOnForwardFailure=yes', '-R', `80:${host}:${opts.port}`, 'nokey@localhost.run']);
+  return startSshTunnel(name, opts, ['-R', `80:${host}:${opts.port}`, 'nokey@localhost.run']);
 }
 
 export async function startTunnelAuto(opts: TunnelProviderOptions, preferred?: TunnelProviderName): Promise<TunnelHandle> {
