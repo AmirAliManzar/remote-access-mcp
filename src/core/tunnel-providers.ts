@@ -114,7 +114,23 @@ function startSshTunnel(name: TunnelProviderName, opts: TunnelProviderOptions, a
 
 export async function startTunnelProvider(name: TunnelProviderName, opts: TunnelProviderOptions): Promise<TunnelHandle> {
   const host = opts.host || '127.0.0.1';
-  if (name === 'cloudflare') return startQuickTunnel(opts);
+  if (name === 'cloudflare') {
+    const handle = await startQuickTunnel(opts);
+    if (!opts.expectedVersion) return handle;
+    const deadline = Date.now() + (opts.healthTimeoutMs ?? 20_000);
+    let health = await verifyTunnelHealth(handle.url, opts.expectedVersion, 4_000);
+    while (!health.healthy && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 1_500));
+      if (handle.child.exitCode !== null) break;
+      health = await verifyTunnelHealth(handle.url, opts.expectedVersion, 4_000);
+    }
+    if (!health.healthy) {
+      handle.stop();
+      throw new Error(`cloudflare public endpoint failed health verification: ${health.reason || 'unknown error'}`);
+    }
+    opts.log?.('cloudflare: public endpoint verified');
+    return handle;
+  }
   if (name === 'pinggy') {
     return startSshTunnel(name, opts, ['-p', '443', '-R', `0:${host}:${opts.port}`, 'a.pinggy.io']);
   }

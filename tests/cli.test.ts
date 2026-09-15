@@ -27,6 +27,14 @@ function cli(args: string[]): { code: number; out: string } {
 }
 
 describe('cli', () => {
+  it('help exposes update command and keeps upgrade as an alias', () => {
+    const r = cli(['--help']);
+    expect(r.code).toBe(0);
+    expect(r.out).toContain('update [--dry-run]');
+    expect(r.out).toContain('upgrade [--dry-run]');
+    expect(r.out).toContain('Alias for update');
+  });
+
   it('version prints from package.json', () => {
     const r = cli(['version']);
     expect(r.code).toBe(0);

@@ -19,6 +19,17 @@ const exec = promisify(execFile);
 const PKG_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const PKG = JSON.parse(fs.readFileSync(path.join(PKG_ROOT, 'package.json'), 'utf8'));
 
+export function getTunnelRecoveryOrder(failedProvider?: TunnelProviderName, preferred?: TunnelProviderName): TunnelProviderName[] {
+  if (!failedProvider) {
+    return preferred
+      ? [preferred, ...TUNNEL_PROVIDERS.filter((p) => p !== preferred)]
+      : [...TUNNEL_PROVIDERS];
+  }
+  const failedIndex = TUNNEL_PROVIDERS.indexOf(failedProvider);
+  if (failedIndex < 0) return [...TUNNEL_PROVIDERS];
+  return TUNNEL_PROVIDERS.map((_, index) => TUNNEL_PROVIDERS[(failedIndex + 1 + index) % TUNNEL_PROVIDERS.length]);
+}
+
 export async function runServer(opts: {
   host?: string;
   port?: number;
@@ -114,18 +125,25 @@ export async function runServer(opts: {
   let monitoredProvider: TunnelProviderName | undefined = tunnel?.provider as TunnelProviderName | undefined;
   if (tunnel) {
     let consecutiveFailures = 0;
+    // Providers can report a URL and then lose the reverse session moments
+    // later. Detect both process death and public health failure quickly.
     tunnelMonitor = setInterval(async () => {
       if (tunnelRecovering || shuttingDown) return;
       let health: Awaited<ReturnType<typeof verifyTunnelHealth>> | null = null;
       if (tunnel) {
-        health = await verifyTunnelHealth(tunnel.url, PKG.version, 5000);
-        if (health.healthy) {
-          consecutiveFailures = 0;
-          return;
+        if (tunnel.child.exitCode !== null || tunnel.child.killed) {
+          consecutiveFailures = 2;
+          console.error(`[tunnel] provider process exited (${tunnel.provider})`);
+        } else {
+          health = await verifyTunnelHealth(tunnel.url, PKG.version, 5000);
+          if (health.healthy) {
+            consecutiveFailures = 0;
+            return;
+          }
+          consecutiveFailures += 1;
+          if (consecutiveFailures < 2) return;
+          console.error(`[tunnel] unhealthy (${tunnel.provider}): ${health.reason || 'unknown error'}`);
         }
-        consecutiveFailures += 1;
-        if (consecutiveFailures < 2) return;
-        console.error(`[tunnel] unhealthy (${tunnel.provider}): ${health.reason || 'unknown error'}`);
       } else {
         consecutiveFailures = 2;
       }
@@ -138,10 +156,13 @@ export async function runServer(opts: {
       try { failedTunnel?.stop(); } catch {}
       tunnel = null;
 
+      // Rotate away from the failed provider first. Do not let a preferred
+      // provider pin Auto recovery to the same broken service.
+      // Example: localhostrun fails -> pinggy -> cloudflare -> localhostrun.
+      // Only retry the failed provider after every alternative was attempted.
       const preferred = cfg.tunnel?.preferred_provider as TunnelProviderName | undefined;
-      const order = preferred
-        ? [preferred, ...TUNNEL_PROVIDERS.filter((p) => p !== preferred)]
-        : [failedProvider, ...TUNNEL_PROVIDERS.filter((p) => p !== failedProvider)];
+      const order = getTunnelRecoveryOrder(failedProvider, preferred);
+      console.log(`[tunnel] recovery order: ${order.join(' → ')}`);
       let recovered: TunnelHandle | null = null;
       const failures: string[] = [];
       for (const provider of order) {
@@ -157,7 +178,9 @@ export async function runServer(opts: {
           recovered = candidate;
           break;
         } catch (e: any) {
-          failures.push(`${provider}: ${e?.message || e}`);
+          const reason = e?.message || String(e);
+          failures.push(`${provider}: ${reason}`);
+          console.error(`[tunnel] ${provider} failed: ${reason}`);
         }
       }
       if (recovered) {
@@ -173,7 +196,7 @@ export async function runServer(opts: {
         tunnelFailed = true;
       }
       tunnelRecovering = false;
-    }, 15_000);
+    }, 3_000);
     tunnelMonitor.unref();
   }
 

@@ -38,7 +38,8 @@ Getting started:
   url [token]                   Print the connector URL for a chatbot
   doctor                        Diagnose everything in one pass
   status                        Config + service summary
-  upgrade [--dry-run]           Self-update from npm
+  update [--dry-run]            Update to the latest npm release
+  upgrade [--dry-run]           Alias for update
   version
 
 Paths the AI may touch (per token):
@@ -874,7 +875,7 @@ function cmdStatus(): void {
 }
 
 // ---------------------------------------------------------------------------
-// schedule / upgrade
+// schedule / update
 // ---------------------------------------------------------------------------
 function cmdSchedule(args: Args): void {
   const p = path.join(configDir(), 'schedule.json');
@@ -886,7 +887,7 @@ function cmdSchedule(args: Args): void {
   } catch { console.log('(no scheduled tasks)'); }
 }
 
-async function cmdUpgrade(args: Args): Promise<void> {
+async function cmdUpdate(args: Args): Promise<void> {
   console.log(`current: v${PKG.version}`);
   const latest = await fetch('https://registry.npmjs.org/remote-access-mcp/latest')
     .then(r => r.json()).then((j: unknown) => (j as { version: string }).version)
@@ -1006,6 +1007,7 @@ export async function main(argv: string[]): Promise<void> {
     launchTui();
     return;
   }
+  if (argv.length === 1 && (argv[0] === '-h' || argv[0] === '--help')) { console.log(HELP); process.exit(0); }
   const args = parseArgs(argv);
   if (args.flags.has('h') || args.flags.has('help')) { console.log(HELP); process.exit(0); }
 
@@ -1022,7 +1024,8 @@ export async function main(argv: string[]): Promise<void> {
     case 'service': cmdService(args); break;
     case 'status': cmdStatus(); break;
     case 'schedule': cmdSchedule(args); break;
-    case 'upgrade': await cmdUpgrade(args); break;
+    case 'update': await cmdUpdate(args); break;
+    case 'upgrade': await cmdUpdate(args); break;
     case 'webhook': cmdWebhook(args); break;
     case 'config': cmdConfig(args); break;
     case 'version': console.log(PKG.version); break;

@@ -1,6 +1,15 @@
 # Changelog
 
+## 4.6.2
+
+- Fixed Auto tunnel recovery repeatedly selecting the failed preferred provider.
+- Recovery now rotates through every alternative provider before retrying the failed provider.
+- Recovery logs the complete provider order and individual provider failures.
+
 ## 4.6.0 - Tunnel Recovery & Health Monitoring
+
+- Hardened automatic tunnel recovery: detect reverse-SSH process death immediately, check public health every 3 seconds, and fail over to another provider before retrying the failed provider.
+- Cloudflare Quick Tunnel now follows the same real Remote Access MCP health verification as SSH-based providers before being exposed as ready.
 
 - Verifies public tunnel health against the actual Remote Access MCP `/health` payload instead of accepting any HTTP response.
 - Detects provider-side failures such as localhost.run `503 No Tunnel here` as unhealthy.

@@ -41,6 +41,18 @@ describe('tunnel provider safety', () => {
     }
   });
 
+  it('rejects a healthy HTTP response with a different version', async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () => new Response(JSON.stringify({ status: 'ok', service: 'remote-access-mcp', version: '4.5.0' }), { status: 200 })) as typeof fetch;
+    try {
+      const result = await verifyTunnelHealth('https://example.test', '4.6.0');
+      expect(result.healthy).toBe(false);
+      expect(result.reason).toContain('version mismatch');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   it('rejects a healthy HTTP response from the wrong service', async () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (async () => new Response(JSON.stringify({ status: 'ok', service: 'other-service' }), { status: 200 })) as typeof fetch;

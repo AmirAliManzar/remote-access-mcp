@@ -217,7 +217,8 @@ function serverMenu(screen: Screen): void {
 }
 
 function systemMenu(screen: Screen): void {
-  sectionMenu(screen, 'System', ['Diagnostics', 'Logs', 'Back'], [
+  sectionMenu(screen, 'System', ['Update Remote Access MCP', 'Diagnostics', 'Logs', 'Back'], [
+    () => runCommand(screen, ['update']),
     () => diagnostics(screen),
     () => logs(screen),
     () => dashboard(screen),
