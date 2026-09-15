@@ -61,7 +61,7 @@ function startSshTunnel(name: TunnelProviderName, opts: TunnelProviderOptions, a
     '-o', 'TCPKeepAlive=yes',
     ...args.filter((arg) => !['-o', 'StrictHostKeyChecking=accept-new', '-o', 'ExitOnForwardFailure=yes'].includes(arg)),
   ];
-  const child = spawn(ssh, sshArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
+  const child = spawn(ssh, sshArgs, { stdio: ['pipe', 'pipe', 'pipe'] });
   const timeoutMs = opts.timeoutMs ?? 45_000;
   const log = opts.log || (() => {});
   return new Promise((resolve, reject) => {

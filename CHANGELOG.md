@@ -162,3 +162,9 @@ All notable changes to Remote Access MCP are documented here.
 ## [2.x]
 
 See the repository history for changes from the 2.x development line.
+
+## 4.6.3
+
+- Fix SSH tunnel lifecycle on Windows by keeping the SSH stdin stream open instead of closing it immediately.
+- Prevent localhost.run and Pinggy tunnels from exiting after successfully exposing and verifying a public URL.
+- Harden tunnel recovery against provider process termination after initial health verification.
