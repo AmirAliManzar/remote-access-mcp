@@ -60,7 +60,7 @@ function startSshTunnel(name: TunnelProviderName, opts: TunnelProviderOptions, a
   const ssh = which('ssh');
   if (!ssh) throw new Error(`${name}: ssh is not installed`);
   const sshArgs = [
-    '-T',
+    ...(name === 'localhostrun' ? ['-tt'] : ['-T']),
     '-o', 'StrictHostKeyChecking=accept-new',
     '-o', 'ExitOnForwardFailure=yes',
     '-o', 'ServerAliveInterval=5',
@@ -76,9 +76,10 @@ function startSshTunnel(name: TunnelProviderName, opts: TunnelProviderOptions, a
   const debugErr = debugDir ? createWriteStream(path.join(debugDir, `${name}.err.log`), { flags: 'a' }) : null;
   const child = spawn(ssh, sshArgs, {
     // localhost.run's free SSH session is an interactive remote shell carrying
-    // the reverse-forward. On Windows, inheriting stdin keeps that session
-    // attached to the user's console instead of relying on fragile detached
-    // console/job-object semantics. stdout/stderr stay piped for URL parsing.
+    // the reverse-forward. Force a PTY for localhost.run so the Windows OpenSSH
+    // child has the same interactive SSH session shape as the documented CLI
+    // usage. Keep stdin attached to the user's console; stdout/stderr stay
+    // piped for URL parsing and diagnostics.
     stdio: [process.platform === 'win32' ? 'inherit' : 'pipe', 'pipe', 'pipe'],
     windowsHide: false,
   });
@@ -142,12 +143,14 @@ function startSshTunnel(name: TunnelProviderName, opts: TunnelProviderOptions, a
 }
 
 function startProcessTunnel(name: TunnelProviderName, opts: TunnelProviderOptions, command: string, args: string[]): Promise<TunnelHandle> {
-  const child = spawn(command, args, {
+  const isWindows = process.platform === 'win32';
+  const spawnCommand = isWindows ? process.env.ComSpec || 'cmd.exe' : command;
+  const spawnArgs = isWindows
+    ? ['/d', '/s', '/c', [command, ...args].map((value) => /[\s&()^]/.test(value) ? `"${value.replace(/"/g, '\\"')}"` : value).join(' ')]
+    : args;
+  const child = spawn(spawnCommand, spawnArgs, {
     stdio: ['ignore', 'pipe', 'pipe'],
-    windowsHide: process.platform === 'win32',
-    // npx.cmd is a Windows command script, not a native executable.
-    // shell=true lets Node launch it through cmd.exe and avoids EINVAL.
-    shell: process.platform === 'win32',
+    windowsHide: isWindows,
   });
   const timeoutMs = opts.timeoutMs ?? 60_000;
   const log = opts.log || (() => {});

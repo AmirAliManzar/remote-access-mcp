@@ -1,3 +1,8 @@
+# 4.6.7
+
+- Fix Windows localhost.run SSH sessions by forcing the interactive PTY shape expected by localhost.run.
+- Fix Windows NPort execution without relying on `shell: true`; launch command scripts through `cmd.exe` with explicit argument quoting.
+
 # Changelog
 
 ## 4.6.6
