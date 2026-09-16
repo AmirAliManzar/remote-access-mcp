@@ -34,7 +34,7 @@ Usage:
 Getting started:
   init [--paths a,b]            Create config + first token
   start [--tunnel] [--provider P] [--direct] [--port P] Run the gateway
-  tunnel [--provider P] [--direct] Start gateway + public URL (auto|localhostrun|cloudflare|pinggy|nport)
+  tunnel [--provider P] [--debug] [--direct] Start gateway + public URL (auto|localhostrun|cloudflare|pinggy|nport)
   url [token]                   Print the connector URL for a chatbot
   doctor                        Diagnose everything in one pass
   status                        Config + service summary
@@ -215,6 +215,7 @@ async function cmdStart(args: Args): Promise<void> {
     tunnelProvider: args.values.get('provider') as TunnelProviderName | 'auto' | undefined,
     direct: args.flags.has('direct'),
     directPort: args.values.has('direct-port') ? parseInt(args.values.get('direct-port')!, 10) : undefined,
+    debug: args.flags.has('debug'),
   });
 }
 
@@ -228,6 +229,7 @@ async function cmdTunnel(args: Args): Promise<void> {
     tunnelProvider: args.values.get('provider') as TunnelProviderName | 'auto' | undefined,
     direct: args.flags.has('direct'),
     directPort: args.values.has('direct-port') ? parseInt(args.values.get('direct-port')!, 10) : undefined,
+    debug: args.flags.has('debug'),
   });
 }
 

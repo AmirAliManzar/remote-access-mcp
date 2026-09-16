@@ -43,6 +43,7 @@ export async function runServer(opts: {
   tunnelProvider?: TunnelProviderName | 'auto';
   direct?: boolean;
   directPort?: number;
+  debug?: boolean;
 } = {}): Promise<void> {
   const cfg = loadLiveConfig();
   if (!cfg.tokens.length) {
@@ -105,8 +106,8 @@ export async function runServer(opts: {
       const provider = configured === 'auto' && preferred ? preferred : configured;
       console.log(`[tunnel] provider: ${provider}${configured === 'auto' && preferred ? ' (preferred)' : ''}`);
       tunnel = configured === 'auto'
-        ? await startTunnelAuto({ port, host, expectedVersion: PKG.version, log: (m) => console.log(`[tunnel] ${m}`) }, preferred)
-        : await startTunnelProvider(provider as TunnelProviderName, { port, host, expectedVersion: PKG.version, log: (m) => console.log(`[tunnel] ${m}`) });
+        ? await startTunnelAuto({ port, host, expectedVersion: PKG.version, debug: opts.debug, log: (m) => console.log(`[tunnel] ${m}`) }, preferred)
+        : await startTunnelProvider(provider as TunnelProviderName, { port, host, expectedVersion: PKG.version, debug: opts.debug, log: (m) => console.log(`[tunnel] ${m}`) });
       cfg.tunnel = { ...(cfg.tunnel || { provider: configured as any, auto_start: false }), preferred_provider: tunnel.provider as any, last_url: tunnel.url };
       try { const { saveConfig } = await import('../core/config.js'); saveConfig(cfg); } catch { /* runtime link persistence is best effort */ }
       writeRuntimeState({ pid: process.pid, tunnel_url: tunnel.url, tunnel_provider: tunnel.provider, host, port, started: new Date().toISOString() });
@@ -173,7 +174,7 @@ export async function runServer(opts: {
       for (const provider of order) {
         try {
           console.log(`[tunnel] reconnect: trying ${provider}...`);
-          const candidate = await startTunnelProvider(provider, { port, host, expectedVersion: PKG.version, log: (m) => console.log(`[tunnel] ${m}`) });
+          const candidate = await startTunnelProvider(provider, { port, host, expectedVersion: PKG.version, debug: opts.debug, log: (m) => console.log(`[tunnel] ${m}`) });
           const candidateHealth = await verifyTunnelHealth(candidate.url, PKG.version, 8000);
           if (!candidateHealth.healthy) {
             failures.push(`${provider}: ${candidateHealth.reason || 'health check failed'}`);

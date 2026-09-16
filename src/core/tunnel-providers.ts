@@ -1,4 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process';
+import { createWriteStream, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { startQuickTunnel, type TunnelHandle } from './tunnel.js';
 import { which } from './platform.js';
@@ -14,6 +17,7 @@ export interface TunnelProviderOptions {
   log?: (msg: string) => void;
   expectedVersion?: string;
   healthTimeoutMs?: number;
+  debug?: boolean;
 }
 
 export interface TunnelHealth {
@@ -67,12 +71,20 @@ function startSshTunnel(name: TunnelProviderName, opts: TunnelProviderOptions, a
   // localhost.run exposes the public URL through the remote shell, so stdin
   // must stay open. On Windows, detach the SSH process from the console and
   // unref it so terminal/console-handle teardown cannot close the tunnel.
+  const debugDir = opts.debug ? mkdtempSync(path.join(tmpdir(), 'ramcp-tunnel-')) : null;
+  const debugOut = debugDir ? createWriteStream(path.join(debugDir, `${name}.out.log`), { flags: 'a' }) : null;
+  const debugErr = debugDir ? createWriteStream(path.join(debugDir, `${name}.err.log`), { flags: 'a' }) : null;
   const child = spawn(ssh, sshArgs, {
-    stdio: ['pipe', 'pipe', 'pipe'],
-    windowsHide: process.platform === 'win32',
-    detached: process.platform === 'win32',
+    // localhost.run's free SSH session is an interactive remote shell carrying
+    // the reverse-forward. On Windows, inheriting stdin keeps that session
+    // attached to the user's console instead of relying on fragile detached
+    // console/job-object semantics. stdout/stderr stay piped for URL parsing.
+    stdio: [process.platform === 'win32' ? 'inherit' : 'pipe', 'pipe', 'pipe'],
+    windowsHide: false,
   });
-  if (process.platform === 'win32') child.unref();
+  if (debugOut) child.stdout?.pipe(debugOut);
+  if (debugErr) child.stderr?.pipe(debugErr);
+  if (opts.debug) opts.log?.(`${name}: debug pid=${child.pid ?? 'unknown'} platform=${process.platform} ssh=${ssh} args=${sshArgs.join(' ')}`);
   const timeoutMs = opts.timeoutMs ?? 45_000;
   const log = opts.log || (() => {});
   return new Promise((resolve, reject) => {
@@ -81,6 +93,8 @@ function startSshTunnel(name: TunnelProviderName, opts: TunnelProviderOptions, a
     const cleanup = () => {
       try { child.stdin?.end(); } catch {}
       try { child.kill(); } catch {}
+      try { debugOut?.end(); debugErr?.end(); } catch {}
+      if (debugDir) opts.log?.(`${name}: debug logs=${debugDir}`);
     };
     const timer = setTimeout(() => {
       if (settled) return;
@@ -120,7 +134,8 @@ function startSshTunnel(name: TunnelProviderName, opts: TunnelProviderOptions, a
         reject(error);
       });
     };
-    child.stdout?.on('data', scan); child.stderr?.on('data', scan);
+    child.stdout?.on('data', (chunk) => { if (opts.debug) opts.log?.(`${name}: stdout ${chunk.toString().trim().slice(0, 400)}`); scan(chunk); });
+    child.stderr?.on('data', (chunk) => { if (opts.debug) opts.log?.(`${name}: stderr ${chunk.toString().trim().slice(0, 400)}`); scan(chunk); });
     child.on('error', (e) => { if (!settled) { settled = true; clearTimeout(timer); reject(e); } });
     child.on('exit', (code) => { if (!settled) { settled = true; clearTimeout(timer); reject(new Error(`${name} exited with code ${code}\n${buffer.slice(-800)}`)); } });
   });
@@ -130,6 +145,9 @@ function startProcessTunnel(name: TunnelProviderName, opts: TunnelProviderOption
   const child = spawn(command, args, {
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: process.platform === 'win32',
+    // npx.cmd is a Windows command script, not a native executable.
+    // shell=true lets Node launch it through cmd.exe and avoids EINVAL.
+    shell: process.platform === 'win32',
   });
   const timeoutMs = opts.timeoutMs ?? 60_000;
   const log = opts.log || (() => {});

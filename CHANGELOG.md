@@ -1,5 +1,12 @@
 # Changelog
 
+## 4.6.6
+
+- Harden Windows localhost.run SSH lifecycle by keeping the reverse tunnel attached to the Windows console stdin instead of using detached child-process semantics.
+- Add `--debug` tunnel diagnostics with provider PID, command details, stdout/stderr snapshots, and temporary debug log paths.
+- Harden Windows NPort execution through `npx.cmd` shell invocation.
+
+
 ## 4.6.5
 
 - Hardened localhost.run SSH session lifetime on Windows by detaching the OpenSSH child from terminal lifecycle events and keeping its remote shell active.

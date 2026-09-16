@@ -1,6 +1,6 @@
 {
   "name": "remote-access-mcp",
-  "version": "4.6.5",
+  "version": "4.6.6",
   "description": "Turn any laptop, desktop, VM, or server into a secure AI-agent workspace via MCP. Let ChatGPT, Claude, Grok, Qwen and other MCP clients read and edit files, run commands, test code, inspect systems, and complete real-world tasks.",
   "type": "module",
   "bin": {
