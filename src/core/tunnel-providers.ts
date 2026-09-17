@@ -1,5 +1,5 @@
-import { spawn, type ChildProcess } from 'node:child_process';
-import { createWriteStream, mkdtempSync, rmSync } from 'node:fs';
+import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
+import { createWriteStream, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
@@ -68,21 +68,45 @@ function startSshTunnel(name: TunnelProviderName, opts: TunnelProviderOptions, a
     '-o', 'TCPKeepAlive=yes',
     ...args.filter((arg) => !['-o', 'StrictHostKeyChecking=accept-new', '-o', 'ExitOnForwardFailure=yes'].includes(arg)),
   ];
-  // localhost.run exposes the public URL through the remote shell, so stdin
-  // must stay open. On Windows, detach the SSH process from the console and
-  // unref it so terminal/console-handle teardown cannot close the tunnel.
   const debugDir = opts.debug ? mkdtempSync(path.join(tmpdir(), 'ramcp-tunnel-')) : null;
   const debugOut = debugDir ? createWriteStream(path.join(debugDir, `${name}.out.log`), { flags: 'a' }) : null;
   const debugErr = debugDir ? createWriteStream(path.join(debugDir, `${name}.err.log`), { flags: 'a' }) : null;
-  const child = spawn(ssh, sshArgs, {
-    // localhost.run's free SSH session is an interactive remote shell carrying
-    // the reverse-forward. Force a PTY for localhost.run so the Windows OpenSSH
-    // child has the same interactive SSH session shape as the documented CLI
-    // usage. Keep stdin attached to the user's console; stdout/stderr stay
-    // piped for URL parsing and diagnostics.
-    stdio: [process.platform === 'win32' ? 'inherit' : 'pipe', 'pipe', 'pipe'],
-    windowsHide: false,
-  });
+
+  // localhost.run's SSH endpoint can close an anonymous session from the
+  // remote side. On Windows, supervise the SSH process in a tiny batch loop so
+  // the tunnel automatically reconnects instead of handing a dead child back
+  // to the server monitor. The SSH URL is emitted again after each reconnect.
+  let child: ChildProcess;
+  let supervisorFile: string | null = null;
+  if (process.platform === 'win32' && name === 'localhostrun') {
+    const commandLine = [ssh, ...sshArgs].map((value) => {
+      const escaped = value.replace(/"/g, '""');
+      return /[\s&()^]/.test(value) ? `"${escaped}"` : escaped;
+    }).join(' ');
+    supervisorFile = path.join(debugDir || tmpdir(), `ramcp-${name}-${process.pid}-${Date.now()}.cmd`);
+    const script = [
+      '@echo off',
+      ':loop',
+      commandLine,
+      'echo [ramcp] localhostrun ssh exited; reconnecting... 1>&2',
+      'timeout /t 2 /nobreak >nul',
+      'goto loop',
+      '',
+    ].join('\r\n');
+    // Keep the supervisor file in the debug directory when debugging so the
+    // exact Windows command is inspectable; otherwise it lives in %TEMP%.
+    writeFileSync(supervisorFile, script, 'utf8');
+    child = spawn(process.env.ComSpec || 'cmd.exe', ['/d', '/q', '/c', supervisorFile], {
+      stdio: ['inherit', 'pipe', 'pipe'],
+      windowsHide: false,
+    });
+  } else {
+    child = spawn(ssh, sshArgs, {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: process.platform === 'win32',
+    });
+  }
+
   if (debugOut) child.stdout?.pipe(debugOut);
   if (debugErr) child.stderr?.pipe(debugErr);
   if (opts.debug) opts.log?.(`${name}: debug pid=${child.pid ?? 'unknown'} platform=${process.platform} ssh=${ssh} args=${sshArgs.join(' ')}`);
@@ -91,10 +115,19 @@ function startSshTunnel(name: TunnelProviderName, opts: TunnelProviderOptions, a
   return new Promise((resolve, reject) => {
     let settled = false;
     let buffer = '';
+    let resolvedHandle: TunnelHandle | null = null;
     const cleanup = () => {
       try { child.stdin?.end(); } catch {}
       try { child.kill(); } catch {}
+      if (process.platform === 'win32' && name === 'localhostrun' && child.pid) {
+        try {
+          execFileSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true });
+        } catch {}
+      }
       try { debugOut?.end(); debugErr?.end(); } catch {}
+      if (supervisorFile) {
+        try { rmSync(supervisorFile, { force: true }); } catch {}
+      }
       if (debugDir) opts.log?.(`${name}: debug logs=${debugDir}`);
     };
     const timer = setTimeout(() => {
@@ -104,22 +137,30 @@ function startSshTunnel(name: TunnelProviderName, opts: TunnelProviderOptions, a
     }, timeoutMs);
     const scan = (chunk: Buffer) => {
       buffer += chunk.toString();
-      const m = buffer.match(URL_PATTERNS[name]);
-      if (!m || settled) return;
-      settled = true; clearTimeout(timer);
+      const matches = [...buffer.matchAll(URL_PATTERNS[name])];
+      const m = matches.at(-1);
+      if (!m) return;
       const url = m[0].replace(/[.,;)]+$/, '');
+      if (resolvedHandle) {
+        if (resolvedHandle.url !== url) {
+          resolvedHandle.url = url;
+          log(`${name}: reconnected: ${url}`);
+        }
+        buffer = buffer.slice(-1200);
+        return;
+      }
+      if (settled) return;
+      settled = true; clearTimeout(timer);
       log(`${name}: ${url}`);
       const handle: TunnelHandle = { url, child, stop: cleanup, provider: name };
+      resolvedHandle = handle;
       const healthDeadline = Date.now() + (opts.healthTimeoutMs ?? 20_000);
       const verify = async (): Promise<void> => {
-        if (!opts.expectedVersion) {
-          resolve(handle);
-          return;
-        }
+        if (!opts.expectedVersion) { resolve(handle); return; }
         let health = await verifyTunnelHealth(url, opts.expectedVersion, 4_000);
         while (!health.healthy && Date.now() < healthDeadline) {
           await new Promise((r) => setTimeout(r, 1_500));
-          if (child.exitCode !== null) break;
+          if (child.exitCode !== null && process.platform !== 'win32') break;
           health = await verifyTunnelHealth(url, opts.expectedVersion, 4_000);
         }
         if (health.healthy) {
@@ -130,23 +171,24 @@ function startSshTunnel(name: TunnelProviderName, opts: TunnelProviderOptions, a
         cleanup();
         reject(new Error(`${name} public endpoint failed health verification: ${health.reason || 'unknown error'}`));
       };
-      void verify().catch((error) => {
-        cleanup();
-        reject(error);
-      });
+      void verify().catch((error) => { cleanup(); reject(error); });
     };
     child.stdout?.on('data', (chunk) => { if (opts.debug) opts.log?.(`${name}: stdout ${chunk.toString().trim().slice(0, 400)}`); scan(chunk); });
     child.stderr?.on('data', (chunk) => { if (opts.debug) opts.log?.(`${name}: stderr ${chunk.toString().trim().slice(0, 400)}`); scan(chunk); });
-    child.on('error', (e) => { if (!settled) { settled = true; clearTimeout(timer); reject(e); } });
-    child.on('exit', (code) => { if (!settled) { settled = true; clearTimeout(timer); reject(new Error(`${name} exited with code ${code}\n${buffer.slice(-800)}`)); } });
+    child.on('error', (e) => { if (!resolvedHandle && !settled) { settled = true; clearTimeout(timer); reject(e); } });
+    child.on('exit', (code) => {
+      if (!resolvedHandle && !settled) { settled = true; clearTimeout(timer); reject(new Error(`${name} exited with code ${code}\n${buffer.slice(-800)}`)); }
+      // A Windows localhost.run supervisor should never exit on a remote SSH
+      // disconnect; if it does, the outer monitor can still perform provider
+      // recovery normally.
+    });
   });
 }
-
 function startProcessTunnel(name: TunnelProviderName, opts: TunnelProviderOptions, command: string, args: string[]): Promise<TunnelHandle> {
   const isWindows = process.platform === 'win32';
   const spawnCommand = isWindows ? process.env.ComSpec || 'cmd.exe' : command;
   const spawnArgs = isWindows
-    ? ['/d', '/s', '/c', [command, ...args].map((value) => /[\s&()^]/.test(value) ? `"${value.replace(/"/g, '\\"')}"` : value).join(' ')]
+    ? ['/d', '/s', '/c', [command, ...args].map((value) => /[\s&()^]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value).join(' ')]
     : args;
   const child = spawn(spawnCommand, spawnArgs, {
     stdio: ['ignore', 'pipe', 'pipe'],
