@@ -1,3 +1,10 @@
+# 4.6.8
+
+- Replace the Windows localhost.run batch supervisor with a Node-based SSH supervisor that survives remote SSH disconnects and reconnects automatically.
+- Keep the tunnel provider process alive across localhost.run remote-side session closures so the outer health monitor does not unnecessarily fail over to other providers.
+- Preserve public URL detection and health verification across reconnects.
+- Fix Windows NPort execution by invoking the resolved `npx.cmd` through the Windows shell without double-quoting the executable path.
+
 # 4.6.7
 
 - Fix Windows localhost.run SSH sessions by forcing the interactive PTY shape expected by localhost.run.

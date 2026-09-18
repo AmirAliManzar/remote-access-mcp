@@ -1,7 +1,8 @@
-import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
-import { createWriteStream, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { spawn, type ChildProcess } from 'node:child_process';
+import { createWriteStream, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { randomBytes } from 'node:crypto';
 import { startQuickTunnel, type TunnelHandle } from './tunnel.js';
 import { which } from './platform.js';
@@ -73,33 +74,18 @@ function startSshTunnel(name: TunnelProviderName, opts: TunnelProviderOptions, a
   const debugErr = debugDir ? createWriteStream(path.join(debugDir, `${name}.err.log`), { flags: 'a' }) : null;
 
   // localhost.run's SSH endpoint can close an anonymous session from the
-  // remote side. On Windows, supervise the SSH process in a tiny batch loop so
-  // the tunnel automatically reconnects instead of handing a dead child back
-  // to the server monitor. The SSH URL is emitted again after each reconnect.
+  // remote side. The server monitor must not confuse that expected provider
+  // disconnect with death of the tunnel supervisor. On Windows we therefore
+  // run a small Node supervisor process that owns SSH and reconnects it.
   let child: ChildProcess;
-  let supervisorFile: string | null = null;
+  let supervisorPid: number | null = null;
   if (process.platform === 'win32' && name === 'localhostrun') {
-    const commandLine = [ssh, ...sshArgs].map((value) => {
-      const escaped = value.replace(/"/g, '""');
-      return /[\s&()^]/.test(value) ? `"${escaped}"` : escaped;
-    }).join(' ');
-    supervisorFile = path.join(debugDir || tmpdir(), `ramcp-${name}-${process.pid}-${Date.now()}.cmd`);
-    const script = [
-      '@echo off',
-      ':loop',
-      commandLine,
-      'echo [ramcp] localhostrun ssh exited; reconnecting... 1>&2',
-      'timeout /t 2 /nobreak >nul',
-      'goto loop',
-      '',
-    ].join('\r\n');
-    // Keep the supervisor file in the debug directory when debugging so the
-    // exact Windows command is inspectable; otherwise it lives in %TEMP%.
-    writeFileSync(supervisorFile, script, 'utf8');
-    child = spawn(process.env.ComSpec || 'cmd.exe', ['/d', '/q', '/c', supervisorFile], {
-      stdio: ['inherit', 'pipe', 'pipe'],
-      windowsHide: false,
+    const supervisor = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'tunnel-supervisor.js');
+    child = spawn(process.execPath, [supervisor, JSON.stringify({ ssh, args: sshArgs })], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
     });
+    supervisorPid = child.pid ?? null;
   } else {
     child = spawn(ssh, sshArgs, {
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -109,7 +95,7 @@ function startSshTunnel(name: TunnelProviderName, opts: TunnelProviderOptions, a
 
   if (debugOut) child.stdout?.pipe(debugOut);
   if (debugErr) child.stderr?.pipe(debugErr);
-  if (opts.debug) opts.log?.(`${name}: debug pid=${child.pid ?? 'unknown'} platform=${process.platform} ssh=${ssh} args=${sshArgs.join(' ')}`);
+  if (opts.debug) opts.log?.(`${name}: debug pid=${child.pid ?? 'unknown'} supervisor=${supervisorPid ?? 'none'} platform=${process.platform} ssh=${ssh} args=${sshArgs.join(' ')}`);
   const timeoutMs = opts.timeoutMs ?? 45_000;
   const log = opts.log || (() => {});
   return new Promise((resolve, reject) => {
@@ -119,15 +105,12 @@ function startSshTunnel(name: TunnelProviderName, opts: TunnelProviderOptions, a
     const cleanup = () => {
       try { child.stdin?.end(); } catch {}
       try { child.kill(); } catch {}
-      if (process.platform === 'win32' && name === 'localhostrun' && child.pid) {
+      if (process.platform === 'win32' && name === 'localhostrun' && supervisorPid) {
         try {
-          execFileSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true });
+          spawn('taskkill', ['/PID', String(supervisorPid), '/T', '/F'], { stdio: 'ignore', windowsHide: true });
         } catch {}
       }
       try { debugOut?.end(); debugErr?.end(); } catch {}
-      if (supervisorFile) {
-        try { rmSync(supervisorFile, { force: true }); } catch {}
-      }
       if (debugDir) opts.log?.(`${name}: debug logs=${debugDir}`);
     };
     const timer = setTimeout(() => {
@@ -186,13 +169,11 @@ function startSshTunnel(name: TunnelProviderName, opts: TunnelProviderOptions, a
 }
 function startProcessTunnel(name: TunnelProviderName, opts: TunnelProviderOptions, command: string, args: string[]): Promise<TunnelHandle> {
   const isWindows = process.platform === 'win32';
-  const spawnCommand = isWindows ? process.env.ComSpec || 'cmd.exe' : command;
-  const spawnArgs = isWindows
-    ? ['/d', '/s', '/c', [command, ...args].map((value) => /[\s&()^]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value).join(' ')]
-    : args;
-  const child = spawn(spawnCommand, spawnArgs, {
+  const normalizedCommand = isWindows ? command.replace(/^"|"$/g, '') : command;
+  const child = spawn(normalizedCommand, args, {
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: isWindows,
+    shell: isWindows,
   });
   const timeoutMs = opts.timeoutMs ?? 60_000;
   const log = opts.log || (() => {});
