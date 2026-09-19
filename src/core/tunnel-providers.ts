@@ -51,10 +51,10 @@ export async function verifyTunnelHealth(url: string, expectedVersion?: string, 
 }
 
 const URL_PATTERNS: Record<TunnelProviderName, RegExp> = {
-  pinggy: /https:\/\/[^\s"'<>]+\.(?:free\.pinggy\.net|pinggy-free\.link)/i,
-  localhostrun: /https:\/\/[^\s"'<>]+\.lhr\.life/i,
-  cloudflare: /https:\/\/[a-z0-9-]+\.trycloudflare\.com/i,
-  nport: /https:\/\/[a-z0-9-]+\.(?:nport\.link|nport\.online)/i,
+  pinggy: /https:\/\/[^\s"'<>]+\.(?:free\.pinggy\.net|pinggy-free\.link)/gi,
+  localhostrun: /https:\/\/[^\s"'<>]+\.lhr\.life/gi,
+  cloudflare: /https:\/\/[a-z0-9-]+\.trycloudflare\.com/gi,
+  nport: /https:\/\/[a-z0-9-]+\.(?:nport\.link|nport\.online)/gi,
 };
 
 function startSshTunnel(name: TunnelProviderName, opts: TunnelProviderOptions, args: string[]): Promise<TunnelHandle> {
