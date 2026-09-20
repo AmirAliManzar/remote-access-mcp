@@ -1,3 +1,9 @@
+# 4.6.11
+
+- Prevent Windows localhost.run supervisor reconnects from being mistaken for immediate provider failure.
+- Give the localhost.run supervisor time to establish a replacement public endpoint before global tunnel failover.
+- Re-verify the supervisor's new endpoint before rotating to another provider.
+
 # 4.6.10
 
 - Stop treating Direct HTTP as an automatic fallback when a tunnel fails.

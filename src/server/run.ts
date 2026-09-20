@@ -159,6 +159,26 @@ export async function runServer(opts: {
         consecutiveFailures = 2;
       }
 
+      if (tunnel?.provider === 'localhostrun' && process.platform === 'win32') {
+        const reconnectUrl = tunnel.url;
+        console.log('[tunnel] localhostrun supervisor reconnect detected; waiting before provider failover...');
+        await new Promise((resolve) => setTimeout(resolve, 12_000));
+        if (tunnel && tunnel.url !== reconnectUrl) {
+          const reconnectedHealth = await verifyTunnelHealth(tunnel.url, PKG.version, 5_000);
+          if (reconnectedHealth.healthy) {
+            console.log(`[tunnel] localhostrun supervisor recovered: ${tunnel.url}`);
+            consecutiveFailures = 0;
+            return;
+          }
+        } else if (tunnel) {
+          const retryHealth = await verifyTunnelHealth(tunnel.url, PKG.version, 5_000);
+          if (retryHealth.healthy) {
+            consecutiveFailures = 0;
+            return;
+          }
+        }
+      }
+
       tunnelRecovering = true;
       const failedTunnel = tunnel;
       const failedProvider = (failedTunnel?.provider as TunnelProviderName | undefined) || monitoredProvider || cfg.tunnel?.preferred_provider as TunnelProviderName;
