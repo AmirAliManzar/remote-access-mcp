@@ -1,4 +1,11 @@
-# 4.6.8
+# 4.6.10
+
+- Stop treating Direct HTTP as an automatic fallback when a tunnel fails.
+- Direct HTTP now starts only when explicitly requested with `--direct` or enabled in configuration.
+- On laptops behind NAT/private networks, a failed tunnel now reports the tunnel failure instead of exposing a misleading `<server-ipv4>` connector.
+- Keep tunnel recovery/failover separate from Direct HTTP fallback.
+
+# 4.6.9
 
 - Replace the Windows localhost.run batch supervisor with a Node-based SSH supervisor that survives remote SSH disconnects and reconnects automatically.
 - Keep the tunnel provider process alive across localhost.run remote-side session closures so the outer health monitor does not unnecessarily fail over to other providers.

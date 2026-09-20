@@ -121,7 +121,12 @@ export async function runServer(opts: {
       tunnelFailed = true;
       console.error(`[tunnel] failed: ${e.message}`);
       console.error('[tunnel] the gateway is still reachable locally.');
-      console.log('[direct] tunnel unavailable; trying direct HTTP fallback.');
+      if (wantDirect) {
+        console.log('[direct] explicitly requested; starting direct HTTP.');
+      } else {
+        console.error('[direct] not started: direct HTTP is not an automatic tunnel fallback.');
+        console.error('[direct] on laptops behind NAT, use a working tunnel provider or run `ramcp tunnel --direct` only when inbound access is available.');
+      }
     }
   }
 
@@ -206,7 +211,7 @@ export async function runServer(opts: {
     tunnelMonitor.unref();
   }
 
-  if (wantDirect || (!tunnel && tunnelFailed)) {
+  if (wantDirect) {
     try {
       directPort = await chooseDirectPort(opts.directPort ?? cfg.direct_http?.port);
       directServer = createServer(app);
