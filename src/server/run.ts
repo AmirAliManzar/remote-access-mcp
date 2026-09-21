@@ -159,6 +159,11 @@ export async function runServer(opts: {
         consecutiveFailures = 2;
       }
 
+      // set the recovery lock before any await so the 3s monitor interval
+      // cannot start a second recovery while this one is waiting for the
+      // localhost.run supervisor or another provider.
+      tunnelRecovering = true;
+
       if (tunnel?.provider === 'localhostrun' && process.platform === 'win32') {
         const reconnectUrl = tunnel.url;
         console.log('[tunnel] localhostrun supervisor reconnect detected; waiting before provider failover...');
@@ -168,18 +173,19 @@ export async function runServer(opts: {
           if (reconnectedHealth.healthy) {
             console.log(`[tunnel] localhostrun supervisor recovered: ${tunnel.url}`);
             consecutiveFailures = 0;
+            tunnelRecovering = false;
             return;
           }
         } else if (tunnel) {
           const retryHealth = await verifyTunnelHealth(tunnel.url, PKG.version, 5_000);
           if (retryHealth.healthy) {
             consecutiveFailures = 0;
+            tunnelRecovering = false;
             return;
           }
         }
       }
 
-      tunnelRecovering = true;
       const failedTunnel = tunnel;
       const failedProvider = (failedTunnel?.provider as TunnelProviderName | undefined) || monitoredProvider || cfg.tunnel?.preferred_provider as TunnelProviderName;
       if (!failedProvider) { tunnelRecovering = false; return; }

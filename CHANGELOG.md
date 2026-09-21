@@ -1,3 +1,9 @@
+# 4.6.12
+
+- Prevent overlapping tunnel recovery loops on the 3-second health monitor interval.
+- Lock recovery before asynchronous supervisor/provider waits so only one recovery attempt can run at a time.
+- Keep localhost.run supervisor reconnect handling isolated from concurrent Pinggy/Cloudflare/NPort failover attempts.
+
 # 4.6.11
 
 - Prevent Windows localhost.run supervisor reconnects from being mistaken for immediate provider failure.
