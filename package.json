@@ -74,7 +74,7 @@
     "better-sqlite3": "^11.6.0",
     "blessed": "^0.1.81",
     "express": "^4.21.0",
-    "zod": "^3.24.0"
+    "zod": "^4.6.5"
   },
   "optionalDependencies": {
     "@upstash/context7-mcp": "^4.0.4",
